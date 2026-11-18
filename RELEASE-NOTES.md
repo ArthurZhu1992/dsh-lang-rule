@@ -1,5 +1,7 @@
 # Release Notes — dsh-lang-rule
 
+> 说明：`v1.0.0` tag 打在初始提交 `f1e0acf`，本文件随后以 `da80bb9` 加入 `main`，因此 tag 树不含本文件，不是漏提交。后续 `v2.0.0` 会把 tag 打在包含本文件的最终提交上。
+
 ## 仓库
 
 <https://github.com/ArthurZhu1992/dsh-lang-rule>（public，默认分支 `main`）
