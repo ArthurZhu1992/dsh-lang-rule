@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "dsh-lang-rule · deployment-level Chinese language policy",
+    "description": "What it does: injects a Chinese-only language rule into the system prompt so every reasoning trace and visible reply is Simplified Chinese, locked from the first sentence. Scope: main agent, subagents, AgentTeams members, background jobs and all of their outputs. How to verify: start a session and watch whether the first reasoning sentence is Chinese, or run node tools/lang-audit.mjs to measure Chinese ratio and first-sentence language across recent sessions. When disabled: English thinking returns, and subagents or background tasks drift back to English in long runs."
+  }
+}

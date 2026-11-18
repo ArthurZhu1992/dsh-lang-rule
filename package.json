@@ -1,0 +1,60 @@
+{
+  "name": "dsh-lang-rule",
+  "version": "1.0.0",
+  "description": "Deployment-level language policy: Chinese-only reasoning and output for every dsh agent, including subagents and teammates.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*": "./locale/*",
+    "./tools/*": "./tools/*"
+  },
+  "icon": "./icon.svg",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "index.js",
+    "tools",
+    "locale",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "icon.svg"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ArthurZhu1992/dsh-lang-rule.git"
+  },
+  "homepage": "https://github.com/ArthurZhu1992/dsh-lang-rule#readme",
+  "bugs": {
+    "url": "https://github.com/ArthurZhu1992/dsh-lang-rule/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "system-prompt",
+    "language-policy",
+    "chinese",
+    "reasoning",
+    "lang-rule"
+  ],
+  "engines": {
+    "node": ">=18",
+    "dsh": ">=0.2.0"
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/dsh-system-prompt": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-system-prompt": {
+      "optional": true
+    }
+  }
+}
