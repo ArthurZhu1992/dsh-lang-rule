@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "dsh-lang-rule · 部署级中文语言策略",
-    "description": "作用：向系统提示词注入中文铁律，要求内部推理（thinking）与可见回复一律简体中文，首句即锁。覆盖范围：主 agent、子智能体、AgentTeams 成员、后台任务及其全部产出。验证：新开会话让模型思考，看 reasoning 首句是否为中文；或运行 node tools/lang-audit.mjs 统计最近会话的中文占比与首句语言。关掉后：英文 thinking 重新出现，长任务里的子智能体与后台产出也会漂回英文。"
+    "title": "dsh-lang-rule",
+    "description": "部署级语言策略 v2：头锚 -900、子智能体锚 -880、工具文档后重申 5100、尾部首句锚 90050、每请求 runtime-context 500，要求推理与回复首句即简体中文，覆盖主 agent、子智能体、AgentTeams 成员与后台任务；宿主或其它插件关闭 runtime context 时自动降级为四个 section。"
   }
 }

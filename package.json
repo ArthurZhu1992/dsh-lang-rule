@@ -1,15 +1,15 @@
 {
   "name": "dsh-lang-rule",
-  "version": "1.0.0",
-  "description": "Deployment-level language policy: Chinese-only reasoning and output for every dsh agent, including subagents and teammates.",
+  "version": "2.0.0",
+  "description": "Deployment-level language policy: Chinese-only reasoning and output for every dsh agent, with head/subagent/mid/tail anchors and a per-request context channel where the host exposes one.",
   "type": "module",
   "main": "index.js",
   "exports": {
     ".": "./index.js",
     "./package.json": "./package.json",
     "./cordis.patch.yml": "./cordis.patch.yml",
-    "./locale/*": "./locale/*",
-    "./tools/*": "./tools/*"
+    "./tools/*": "./tools/*",
+    "./locale/*": "./locale/*"
   },
   "icon": "./icon.svg",
   "dsh": {
@@ -21,18 +21,18 @@
     "index.js",
     "tools",
     "locale",
-    "cordis.patch.yml",
+    "docs",
     "README.md",
+    "RELEASE-NOTES.md",
+    "CHANGELOG.md",
     "LICENSE",
+    "cordis.patch.yml",
     "icon.svg"
   ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/ArthurZhu1992/dsh-lang-rule.git"
-  },
-  "homepage": "https://github.com/ArthurZhu1992/dsh-lang-rule#readme",
-  "bugs": {
-    "url": "https://github.com/ArthurZhu1992/dsh-lang-rule/issues"
+  "scripts": {
+    "test": "node tools/selftest.mjs && node --test tools/selftest.test.mjs",
+    "verify": "node tools/verify-installed.mjs",
+    "audit": "node tools/lang-audit.mjs"
   },
   "keywords": [
     "dsh",
@@ -42,13 +42,22 @@
     "language-policy",
     "chinese",
     "reasoning",
-    "lang-rule"
+    "lang-rule",
+    "cordis"
   ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ArthurZhu1992/dsh-lang-rule.git"
+  },
+  "homepage": "https://github.com/ArthurZhu1992/dsh-lang-rule#readme",
+  "bugs": {
+    "url": "https://github.com/ArthurZhu1992/dsh-lang-rule/issues"
+  },
   "engines": {
     "node": ">=22.15",
     "dsh": ">=0.2.0"
   },
-  "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/dsh-system-prompt": "*"
   },

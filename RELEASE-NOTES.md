@@ -1,62 +1,34 @@
 # Release Notes — dsh-lang-rule
 
-> 说明：`v1.0.0` tag 打在初始提交 `f1e0acf`，本文件随后以 `da80bb9` 加入 `main`，因此 tag 树不含本文件，不是漏提交。后续 `v2.0.0` 会把 tag 打在包含本文件的最终提交上。
+> 说明：`v1.0.0` tag 打在初始提交 `f1e0acf`，`RELEASE-NOTES.md` 在 v1 发布后才进入 `main`，因此 v1 tag 树不含本文件，不是漏提交。`v2.0.0` 的 tag 打在包含本文件与 `CHANGELOG.md` 的最终提交上。
+> 详细的逐项变更、实测数据与已知限制见 [`CHANGELOG.md`](./CHANGELOG.md)。
 
-## 仓库
+## 2.0.0 — 2026-11-19
 
-<https://github.com/ArthurZhu1992/dsh-lang-rule>（public，默认分支 `main`）
+### 新增
 
-## 当前版本
+- **per-request runtime-context 通道**（`lang-rule:request-tail`，context order `500`）：把同一句首句硬约束放进每一步重新渲染的请求尾部，落在本 step claimed 消息之后，是模型该次请求看到的最后一条消息。order 高于宿主内置 `WEB_SURFACE`（210）。
+- **子智能体强化锚**（`lang-rule:subagent`，order `-880`）：显式点名 subagent / AgentTeams 成员 / workflow 子智能体 / 后台任务（审计显示子会话首句英文率 32.5% vs 主会话 10.9%）。
+- **mid 段**（`lang-rule:mid`，order `5100`）：工具 schema 之后再重申一次首句约束，`midEnabled: false` 可关。
+- **首句硬约束**：默认尾锚 A 版「第一句必须简体中文；不得以 Let me / Let's / I'll / We need to 起手；任务提示是英文也不豁免」，B/C 版作为候选导出。
+- **order 运行时探测**：`getSectionOrder('DEPLOYMENT_PERSONA_SUFFIX')` / `getContextOrder('WEB_SURFACE')` 自适应宿主上界；探测失败回退常量（10200 / 210）。
+- **工具**：`tools/selftest.mjs`（28 项断言）、`tools/selftest.test.mjs`（node:test）、`tools/verify-installed.mjs`（PASS/WARN/FAIL 三态 + `--json --strict --plugin --profile`）、`tools/lang-audit.mjs`（`--json`、逐段首句语言、按锚阶段分层）。
+- **配置**：每锚独立开关与文本/order 覆盖；v1 的 `text` / `order` / `sectionName` 继续有效。
 
-| 项 | 值 |
-| --- | --- |
-| 版本 | `1.0.0` |
-| Tag | `v1.0.0` |
-| 发布形态 | 可直接 `dsh plugin add` 的 bundle（自带 `cordis.patch.yml`） |
-| 许可 | MIT © 2026 ArthurZhu1992 |
+### 已知限制
 
-### 安装
+- **旧宿主无 context API 时无 per-request 通道**：触发条件 `typeof ctx.systemPrompt.context !== 'function'`；表现是只剩 4 个 section、无请求尾注，`logger.debug` 记 `context-api-unavailable`；自查用 `tools/verify-installed.mjs --strict`。按裁决不实现 agent 侧 user 注入回退（会破坏消息序列/缓存/transcript，且全局作用域拿不到 agent 实例）。
+- AgentTeams 英文任务分派模板不在本插件范围，插件只在提示词侧抵消。
+- 首句约束是提示词层约束，不能保证每次都输出中文；量化验收以 `lang-audit --json` 的 `summary.byAnchorLayer` 为准。
+- per-request 快照的去重单位是**整包 sections**：宿主自身 runtime context 变化时整包重发，尾注随之重复出现一次。
 
-```bash
-dsh plugin --profile <your-profile> add github:ArthurZhu1992/dsh-lang-rule
-```
+### 实测口径（2026-11-18）
 
-重启 DSH 后生效。等价写法（任意 git 远端）：
+- headless 3 probe：首句英文 **2/3**，Wilson 95% 区间 **[20.8%, 93.9%]**，**未通过 <5% 判据**（0 失败需 n≈60）。
+- desktop profile：`dsh-norefuse` 的 `includeRuntimeContext: false` 使 per-request 通道被抑制，v2 生效期 6 条 probe **0/6 有 runtime-context 事件**，实际运行为 4 个 section + mid。
+- 历史语料零回归：英文主导会话 **62 → 62**，中文主导率 **76.5% → 76.3%**（Δ −0.2pp）。
+- 已知可绕过：probe-e 以 `The task:` 开头（不在禁词表内），该会话首句与整段仍是英文。
 
-```bash
-dsh plugin --profile <your-profile> add git+https://github.com/ArthurZhu1992/dsh-lang-rule.git
-```
+## 1.0.0
 
-卸载：
-
-```bash
-dsh plugin --profile <your-profile> remove dsh-lang-rule
-```
-
-### 本版内容
-
-- `index.js`：头部锚 order `-900`（长版中文铁律）+ 尾部锚 order `90050`（一行「第一句必须中文」），通过 `ctx.systemPrompt.section()` 注入；服务缺失或同名被占用时静默降级。
-- `cordis.patch.yml`：作为 bundle 自动插入 `dsh-lang-rule`，无需手改宿主补丁。
-- `tools/lang-audit.mjs`：只读审计工具，统计会话 reasoning 中文占比、首句语言、铁律/尾锚是否进入 system message。会话目录默认 `~/.dsh/sessions`，可用 `DSH_SESSIONS_ROOT` 覆盖。需 Node ≥22.15（`zlib.zstdDecompressSync`）；插件本体不依赖该版本。
-- `locale/zh.json`、`locale/en.json`：`meta.title` / `meta.description`（作用、覆盖范围、验证方法、关掉后的影响）。
-- `README.md`：中英双语安装/验证/配置/卸载说明。
-- `icon.svg`：纯几何 path 图标，无 text/font。
-- `LICENSE`：MIT。
-- `package.json`：无 `private`，含 `repository` / `homepage` / `bugs` / `keywords` / `engines.node` / `engines.dsh`。
-
-### 发布验证记录
-
-| 检查 | 结果 |
-| --- | --- |
-| `gh repo view ArthurZhu1992/dsh-lang-rule --json name,visibility,defaultBranchRef,url` | `visibility=PUBLIC`，`defaultBranchRef=main` |
-| `git ls-remote --tags origin v1.0.0` | `refs/tags/v1.0.0` 可见 |
-| `gh api repos/ArthurZhu1992/dsh-lang-rule/contents/package.json` | `HTTP/2.0 200 OK` |
-| 新目录 `git clone --depth 1` + `node --check index.js` | 通过；`tools/lang-audit.mjs` 同样通过 |
-| 隔离目录 `pnpm add github:ArthurZhu1992/dsh-lang-rule` | 解析并安装 `dsh-lang-rule 1.0.0`，落地 `index.js`、`tools/`、`locale/`、`cordis.patch.yml`、`README.md`、`LICENSE`、`icon.svg` |
-
-## v2 待办
-
-1. 等 v2 审查（t4）通过后，在 `2.0.0` 中加入第三处锚点与语料审计结论，并把进化测试 harness 一并发布。
-2. 升 `package.json` 到 `2.0.0`，打 `v2.0.0` tag；`v1.0.0` 标签保留可回溯。
-3. 更新 README 的「当前状态」段落与 locale 文案（补 v2 的量化验证结论）。
-4. 市场侧（dsh-market / awesome-dsh-plugin）提交暂缓，等 v2 落地后再做，避免把 v1 基线写进市场数据源。
+- 初始版本：头部铁律锚（`-900`）+ 尾部锚（`90050`）+ `tools/lang-audit.mjs`。
