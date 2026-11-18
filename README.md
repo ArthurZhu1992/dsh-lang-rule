@@ -34,14 +34,16 @@ reasoning 每个 step 独立采样：首句语言一旦是英文，后续自回�
 ### 安装
 
 ```bash
-dsh plugin --profile desktop add github:ArthurZhu1992/dsh-lang-rule
+dsh plugin --profile <profile> add github:ArthurZhu1992/dsh-lang-rule
 ```
+
+`<profile>` 换成你的 profile 名，例如 `desktop`（桌面端默认）或 `web`。
 
 从本地目录安装（等价，便于调试）：
 
 ```bash
 git clone https://github.com/ArthurZhu1992/dsh-lang-rule
-dsh plugin --profile desktop add file:/absolute/path/to/dsh-lang-rule
+dsh plugin --profile <profile> add file:/absolute/path/to/dsh-lang-rule
 ```
 
 安装后**重启 DSH**（或重新加载 profile）。插件自带 `cordis.patch.yml`，会作为 bundle 自动插入 `dsh-lang-rule` 条目，无需手改宿主补丁。
@@ -57,6 +59,8 @@ dsh plugin --profile desktop add file:/absolute/path/to/dsh-lang-rule
    ```
 
    输出每会话的中文占比、首句语言、是否含铁律/尾锚。会话目录默认 `~/.dsh/sessions`，可用 `DSH_SESSIONS_ROOT` 覆盖。
+
+   **Node 版本**：审计工具用 `zlib.zstdDecompressSync` 解压会话文件，需要 **Node ≥ 22.15**；插件本体（`index.js`）只使用 `ctx.systemPrompt.section()` 与 `ctx.logger`，不依赖该版本。
 3. **手动**：新开一个会话，随便问一句需要思考的问题，观察 reasoning 第一句是否是中文；再让一个子智能体跑任务，看它的产出语言。
 
 ### 配置
@@ -80,7 +84,7 @@ dsh plugin --profile desktop add file:/absolute/path/to/dsh-lang-rule
 ### 卸载
 
 ```bash
-dsh plugin --profile desktop remove dsh-lang-rule
+dsh plugin --profile <profile> remove dsh-lang-rule
 ```
 
 然后确认 profile 的 `package.json` 里 `dsh.profile.bundles` 不再包含 `dsh-lang-rule`（插件管理器通常会自动处理），重启 DSH。卸载后英文 thinking 会恢复。
@@ -91,6 +95,7 @@ dsh plugin --profile desktop remove dsh-lang-rule
 - `systemPrompt` 服务缺失或 `section()` 签名变化时静默退出。
 - 无 UI、无网络、无文件写入（审计工具只读）。
 - `engines.dsh` 标记为 `>=0.2.0`；更老的 DSH 缺少 `systemPrompt.section`，插件会安静地不生效。
+- `engines.node` 标记为 `>=22.15`，由随包的 `tools/lang-audit.mjs` 决定；插件本体不依赖这个版本。
 
 ### 许可证
 
@@ -123,14 +128,16 @@ If either registration fails, the plugin silently degrades instead of blocking D
 ### Install
 
 ```bash
-dsh plugin --profile desktop add github:ArthurZhu1992/dsh-lang-rule
+dsh plugin --profile <profile> add github:ArthurZhu1992/dsh-lang-rule
 ```
+
+`<profile>` is your profile name, e.g. `desktop` (the desktop default) or `web`.
 
 Local checkout (identical, easier to debug):
 
 ```bash
 git clone https://github.com/ArthurZhu1992/dsh-lang-rule
-dsh plugin --profile desktop add file:/absolute/path/to/dsh-lang-rule
+dsh plugin --profile <profile> add file:/absolute/path/to/dsh-lang-rule
 ```
 
 Restart DSH (or reload the profile) afterwards. The package ships its own `cordis.patch.yml`, so it is inserted as a bundle automatically; no manual host patch editing.
@@ -146,6 +153,8 @@ Restart DSH (or reload the profile) afterwards. The package ships its own `cordi
    ```
 
    It reports Chinese ratio, first-sentence language, and whether the rule/tail anchor reached the system message. Sessions default to `~/.dsh/sessions`; override with `DSH_SESSIONS_ROOT`.
+
+   **Node version**: the auditor decompresses session files with `zlib.zstdDecompressSync`, which requires **Node ≥ 22.15**; the plugin itself (`index.js`) only uses `ctx.systemPrompt.section()` and `ctx.logger` and does not depend on it.
 3. **Manual**: start a session with a prompt that requires thinking and check whether the first reasoning sentence is Chinese; then run a subagent task and check its output language.
 
 ### Configure
@@ -169,7 +178,7 @@ Every field has a safe default; if a section name is already taken the plugin yi
 ### Uninstall
 
 ```bash
-dsh plugin --profile desktop remove dsh-lang-rule
+dsh plugin --profile <profile> remove dsh-lang-rule
 ```
 
 Check that `dsh.profile.bundles` in the profile `package.json` no longer lists `dsh-lang-rule` (the plugin manager normally handles it), then restart. English thinking returns.
@@ -180,6 +189,7 @@ Check that `dsh.profile.bundles` in the profile `package.json` no longer lists `
 - Silently exits when the `systemPrompt` service is missing or `section()` changes shape.
 - No UI, no network, no file writes (the auditor is read-only).
 - `engines.dsh` is `>=0.2.0`; older DSH builds without `systemPrompt.section` simply get no effect.
+- `engines.node` is `>=22.15`, driven by the bundled `tools/lang-audit.mjs`; the plugin itself does not depend on that version.
 
 ### License
 

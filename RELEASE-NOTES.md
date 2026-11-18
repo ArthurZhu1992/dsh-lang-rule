@@ -18,26 +18,26 @@
 ### 安装
 
 ```bash
-dsh plugin --profile desktop add github:ArthurZhu1992/dsh-lang-rule
+dsh plugin --profile <profile> add github:ArthurZhu1992/dsh-lang-rule
 ```
 
 重启 DSH 后生效。等价写法（任意 git 远端）：
 
 ```bash
-dsh plugin --profile desktop add git+https://github.com/ArthurZhu1992/dsh-lang-rule.git
+dsh plugin --profile <profile> add git+https://github.com/ArthurZhu1992/dsh-lang-rule.git
 ```
 
 卸载：
 
 ```bash
-dsh plugin --profile desktop remove dsh-lang-rule
+dsh plugin --profile <profile> remove dsh-lang-rule
 ```
 
 ### 本版内容
 
 - `index.js`：头部锚 order `-900`（长版中文铁律）+ 尾部锚 order `90050`（一行「第一句必须中文」），通过 `ctx.systemPrompt.section()` 注入；服务缺失或同名被占用时静默降级。
 - `cordis.patch.yml`：作为 bundle 自动插入 `dsh-lang-rule`，无需手改宿主补丁。
-- `tools/lang-audit.mjs`：只读审计工具，统计会话 reasoning 中文占比、首句语言、铁律/尾锚是否进入 system message。会话目录默认 `~/.dsh/sessions`，可用 `DSH_SESSIONS_ROOT` 覆盖。
+- `tools/lang-audit.mjs`：只读审计工具，统计会话 reasoning 中文占比、首句语言、铁律/尾锚是否进入 system message。会话目录默认 `~/.dsh/sessions`，可用 `DSH_SESSIONS_ROOT` 覆盖。需 Node ≥22.15（`zlib.zstdDecompressSync`）；插件本体不依赖该版本。
 - `locale/zh.json`、`locale/en.json`：`meta.title` / `meta.description`（作用、覆盖范围、验证方法、关掉后的影响）。
 - `README.md`：中英双语安装/验证/配置/卸载说明。
 - `icon.svg`：纯几何 path 图标，无 text/font。

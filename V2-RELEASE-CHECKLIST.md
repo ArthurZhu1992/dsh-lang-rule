@@ -1,8 +1,7 @@
 # V2 发布清单 — 来自 t7 独立审查的 5 条低危项
 
 > 来源：gate-reviewer 的 t7 审查（verdict = pass，v1.0.0 发布面可用）。
-> 结论：**v1.0.0 不回滚、不移动 tag**；下列 5 条在 v2 发布时一并修。
-> 当前状态快照：`main = da80bb9`（docs: release notes），`v1.0.0 = f1e0acf`（初始提交），两者只差 `RELEASE-NOTES.md`。
+> 结论：**v1.0.0 不回滚、不移动 tag**。第 2、3 条已按 captain 要求在 t11 提前修复并推送；剩余 1、4 条留到 v2。
 
 ## 1. tag 与 main 的提交对齐
 
@@ -18,13 +17,13 @@
   - 把 `engines.node` 提到 `>=22`（整包口径，最省心）；或
   - 保留 `>=18`，在 README 与 `locale/*.json` 的验证说明里写明「审计工具需 Node 22+（zstd 解压）」。
 - **附带**：README 的两处审计命令旁同步加注。
-- **状态**：待 v2 执行。
+- **状态**：**已修（t11）**——`engines.node` 改为 `>=22.15`；README 中英「验证」章节与「兼容性与边界」各加一句：审计工具需 Node ≥22.15，插件本体不依赖该版本；两处口径一致。
 
 ## 3. README 安装命令写死 profile 名
 
 - **问题**：README（中英两份）都写 `dsh plugin --profile desktop add …`，读者若用 `web` 等其它 profile 需自行改。
 - **v2 修法**：改为 `dsh plugin --profile <profile> add github:ArthurZhu1992/dsh-lang-rule`，并加一句「`<profile>` 换成你的 profile 名（如 `desktop` / `web`）」，与 dshmarket 官方 README 口径一致。`RELEASE-NOTES.md` 与 `MARKET-PR-DRAFT.md` 里的示例同步改成占位符形式。
-- **状态**：待 v2 执行。
+- **状态**：**已修（t11）README 中英两份**——安装/本地安装/卸载命令全部改为 `--profile <profile>`，并保留 `desktop` / `web` 示例句；`RELEASE-NOTES.md`、`MARKET-PR-DRAFT.md` 的示例留到 v2/市场提交前同步（不属于本次 README 范围）。
 
 ## 4. 市场文案口径：只写已发布事实
 
