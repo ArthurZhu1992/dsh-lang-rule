@@ -34,16 +34,16 @@ reasoning 每个 step 独立采样：首句语言一旦是英文，后续自回�
 ### 安装
 
 ```bash
-dsh plugin --profile <profile> add github:ArthurZhu1992/dsh-lang-rule
+dsh plugin --profile <your-profile> add github:ArthurZhu1992/dsh-lang-rule
 ```
 
-`<profile>` 换成你的 profile 名，例如 `desktop`（桌面端默认）或 `web`。
+`<your-profile>` 换成你的 profile 名，例如 `desktop`（桌面端默认）或 `web`。
 
 从本地目录安装（等价，便于调试）：
 
 ```bash
 git clone https://github.com/ArthurZhu1992/dsh-lang-rule
-dsh plugin --profile <profile> add file:/absolute/path/to/dsh-lang-rule
+dsh plugin --profile <your-profile> add file:/absolute/path/to/dsh-lang-rule
 ```
 
 安装后**重启 DSH**（或重新加载 profile）。插件自带 `cordis.patch.yml`，会作为 bundle 自动插入 `dsh-lang-rule` 条目，无需手改宿主补丁。
@@ -84,7 +84,7 @@ dsh plugin --profile <profile> add file:/absolute/path/to/dsh-lang-rule
 ### 卸载
 
 ```bash
-dsh plugin --profile <profile> remove dsh-lang-rule
+dsh plugin --profile <your-profile> remove dsh-lang-rule
 ```
 
 然后确认 profile 的 `package.json` 里 `dsh.profile.bundles` 不再包含 `dsh-lang-rule`（插件管理器通常会自动处理），重启 DSH。卸载后英文 thinking 会恢复。
@@ -128,16 +128,16 @@ If either registration fails, the plugin silently degrades instead of blocking D
 ### Install
 
 ```bash
-dsh plugin --profile <profile> add github:ArthurZhu1992/dsh-lang-rule
+dsh plugin --profile <your-profile> add github:ArthurZhu1992/dsh-lang-rule
 ```
 
-`<profile>` is your profile name, e.g. `desktop` (the desktop default) or `web`.
+`<your-profile>` is your profile name, e.g. `desktop` (the desktop default) or `web`.
 
 Local checkout (identical, easier to debug):
 
 ```bash
 git clone https://github.com/ArthurZhu1992/dsh-lang-rule
-dsh plugin --profile <profile> add file:/absolute/path/to/dsh-lang-rule
+dsh plugin --profile <your-profile> add file:/absolute/path/to/dsh-lang-rule
 ```
 
 Restart DSH (or reload the profile) afterwards. The package ships its own `cordis.patch.yml`, so it is inserted as a bundle automatically; no manual host patch editing.
@@ -178,7 +178,7 @@ Every field has a safe default; if a section name is already taken the plugin yi
 ### Uninstall
 
 ```bash
-dsh plugin --profile <profile> remove dsh-lang-rule
+dsh plugin --profile <your-profile> remove dsh-lang-rule
 ```
 
 Check that `dsh.profile.bundles` in the profile `package.json` no longer lists `dsh-lang-rule` (the plugin manager normally handles it), then restart. English thinking returns.

@@ -22,8 +22,8 @@
 ## 3. README 安装命令写死 profile 名
 
 - **问题**：README（中英两份）都写 `dsh plugin --profile desktop add …`，读者若用 `web` 等其它 profile 需自行改。
-- **v2 修法**：改为 `dsh plugin --profile <profile> add github:ArthurZhu1992/dsh-lang-rule`，并加一句「`<profile>` 换成你的 profile 名（如 `desktop` / `web`）」，与 dshmarket 官方 README 口径一致。`RELEASE-NOTES.md` 与 `MARKET-PR-DRAFT.md` 里的示例同步改成占位符形式。
-- **状态**：**已修（t11）README 中英两份**——安装/本地安装/卸载命令全部改为 `--profile <profile>`，并保留 `desktop` / `web` 示例句；`RELEASE-NOTES.md`、`MARKET-PR-DRAFT.md` 的示例留到 v2/市场提交前同步（不属于本次 README 范围）。
+- **v2 修法**：改为 `dsh plugin --profile <your-profile> add github:ArthurZhu1992/dsh-lang-rule`，并加一句「`<your-profile>` 换成你的 profile 名（如 `desktop` / `web`）」，与 dshmarket 官方 README 口径一致。`RELEASE-NOTES.md` 与 `MARKET-PR-DRAFT.md` 里的示例同步改成占位符形式。
+- **状态**：**已修（t11）README 中英两份**——安装/本地安装/卸载命令全部改为 `--profile <your-profile>`，并保留 `desktop` / `web` 示例句；`RELEASE-NOTES.md` 已同步；`MARKET-PR-DRAFT.md` 的示例留到市场提交前同步（不属于本次 README 范围）。
 
 ## 4. 市场文案口径：只写已发布事实
 

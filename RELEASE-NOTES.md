@@ -18,19 +18,19 @@
 ### 安装
 
 ```bash
-dsh plugin --profile <profile> add github:ArthurZhu1992/dsh-lang-rule
+dsh plugin --profile <your-profile> add github:ArthurZhu1992/dsh-lang-rule
 ```
 
 重启 DSH 后生效。等价写法（任意 git 远端）：
 
 ```bash
-dsh plugin --profile <profile> add git+https://github.com/ArthurZhu1992/dsh-lang-rule.git
+dsh plugin --profile <your-profile> add git+https://github.com/ArthurZhu1992/dsh-lang-rule.git
 ```
 
 卸载：
 
 ```bash
-dsh plugin --profile <profile> remove dsh-lang-rule
+dsh plugin --profile <your-profile> remove dsh-lang-rule
 ```
 
 ### 本版内容
