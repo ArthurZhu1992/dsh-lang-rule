@@ -11,6 +11,7 @@
 - 撤回「desktop 被 `includeRuntimeContext: false` 抑制、降级为 4 section + mid」的错误结论；实测 desktop 为 **4 section + 1 context**（会话 `03d5a353` 取证）。
 - 数字更正：headless 首句英文 **1/3**（Wilson 95% `[6.1%, 79.2%]`）、语料重算 **261**（drift 3）、中文主导率 **76.2%**。
 - `tools/selftest.mjs` 28 → **32 项**。
+- 对账提示：`v2.0.0` tag 树内的 `CHANGELOG.md` 仍是旧数字与旧结论；2.0.1 起以 `main` 上的 `CHANGELOG.md` 为准。
 
 ## 2.0.0 — 2026-11-19
 

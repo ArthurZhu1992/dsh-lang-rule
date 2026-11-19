@@ -4,7 +4,7 @@
 
 > v2 的核心变化：**不再只加长尾锚**。新增一条 per-request 通道，把「本步第一句必须中文」的约束推到模型采样点前最后一段文本；因为实测数据显示，决定整段语言的是**首句**，而不是锚文本有多长。
 
-- 版本：`2.0.0`（v1 为 `1.0.0`，配置向后兼容）
+- 版本：`2.0.1`（v1 为 `1.0.0`，配置向后兼容；2.0.1 只改文档与检测工具，注入行为同 2.0.0）
 - 运行要求：dsh ≥ 0.2.0；不 import 任何 dsh/cordis 内部模块，服务缺失即静默降级
 - 零网络、零写入：插件只注册提示词贡献，工具只读会话文件
 - 部署注意：desktop profile 上 per-request 通道**生效**，以宿主生成的 user 角色 `<system-reminder>` 快照注入（`event.data.source.kind = "runtime-context"`，`surfaceOp = "append"`，`sections` 含 `lang-rule:request-tail`）；降级只发生在宿主没有 `systemPrompt.context()` 的旧版本，用 `tools/verify-installed.mjs --strict` 自查（输出 `via=user-system-reminder` 即生效）
@@ -149,11 +149,11 @@ const CONTEXT_ORDERS = { WORKING_DIRECTORY: 100, SANDBOX_POLICY: 110, APPROVAL_P
 
 - **触发条件**：`typeof ctx.systemPrompt.context !== 'function'`（宿主 `@deepseek-ai/dsh-system-prompt` 早于引入 `context()` 的版本），或部署显式设置 `requestTail: 'off' | false` / `requestEnabled: false`。
 - **表现**：只剩 4 个 section（头锚 `-900`、子智能体锚 `-880`、mid `5100`、尾部锚 `90050`），**没有 per-request runtime-context 尾注**；`logger.debug` 记录 `[lang-rule] 宿主无 systemPrompt.context()，per-request 通道降级 { name: 'lang-rule:request-tail' }` 与 `skipped: [{ kind: 'context', reason: 'context-api-unavailable' }]`；不抛错、不阻断 dsh 启动。
-- **如何自查**：`node tools/verify-installed.mjs --strict`，看 `per-request 约束出现在 runtime-context` 一项：
+- **如何自查**：`node tools/verify-installed.mjs --strict`，看 `per-request 约束出现在会话里` 一项：
   - `PASS` = 已找到证据；
   - `WARN` = 最近扫描窗口内还没有 v2 安装后的新会话（不误判）；
   - `FAIL` = v2 已装进 profile，且安装后已产生新会话，但 0 条 context 证据 → 插件处于 degraded 或未生效，检查宿主版本与 `requestTail` 配置。
-  - 若用 `--plugin` 指向未安装的工作副本，不做 FAIL 判定（避免误报），detail 会说明「当前检查的是未安装副本」。
+  - 若用 `--plugin` 指向未安装的工作副本，不做 FAIL 判定（避免误报），detail 会说明「当前检查的是未安装副本」；该模式下「v2 安装后新会话」计数为 0，属正常，不代表通道失效。
 
 ---
 

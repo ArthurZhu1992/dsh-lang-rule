@@ -6,6 +6,7 @@ All notable changes to this project are documented here, in the spirit of Keep a
 ## [2.0.1] — 2026-11-19
 
 > 定位：**文档与检测工具修正；注入行为与 2.0.0 完全相同**（`index.js` 未改，sha256 `49e8918552a9b8e82270084e5d713eb930f826650a39a8907045052a4f0c1e06`）。
+> 对账提示：`v2.0.0` tag 树内的 `CHANGELOG.md` 仍是发布时的旧数字（headless 2/3、重算 262、中文主导 76.3%，以及「desktop 被 `includeRuntimeContext:false` 抑制」的错误结论）；本文件是 2.0.1 起的修正版。拿 tag 与 `main` 对账时，以本条说明为准。`v2.0.1` tag 树内为本修正版；`main` 之后的文档小修（版本号、自查项命名）属文档提交，不改变注入行为。
 
 ### Fixed / 修复
 
@@ -21,7 +22,7 @@ All notable changes to this project are documented here, in the spirit of Keep a
 
 ### Verified / 实测
 
-- `node tools/verify-installed.mjs` → **PASS**；`per-request 约束出现在会话里（3/10 个会话；v2 安装后新会话 8 个）`，`来源 user-system-reminder×3`；样例 `03d5a353 … via=user-system-reminder channel=runtime-context section=lang-rule:request-tail`。
+- `node tools/verify-installed.mjs` → **PASS**（已安装 profile 模式）：`per-request 约束出现在会话里（3/10 个会话；v2 安装后新会话 8 个）`，`来源 user-system-reminder×3`；样例 `03d5a353 … via=user-system-reminder channel=runtime-context section=lang-rule:request-tail`。用 `--plugin` 指向未安装副本时，「v2 安装后新会话」计数为 0、不判 FAIL，属正常模式差异。
 - `out/agent-probe-v2.json`（正确事件路径重算）：10 条 probe、**7 条** `containsLangRuleRequestTail: true`、`runtimeContextEvents` 合计 16。
 - `node tools/selftest.mjs` 32/32、`node --test tools/selftest.test.mjs` 8/8。
 
