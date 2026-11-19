@@ -22,6 +22,7 @@ import os from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
+import { detectRequestTailEvidence, messageOf, messageText } from './lib/request-tail-detect.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (name) => argv.includes(name);
@@ -38,6 +39,7 @@ const PROFILE = option('--profile', 'desktop');
 const HOME = option('--home', process.env.DSH_HOME || path.join(os.homedir(), '.dsh'));
 const LIMIT = Number(option('--limit', '10')) || 10;
 const EXPLICIT_PLUGIN = option('--plugin', null);
+const SESSION_FILTER = option('--session', null);
 
 const MAGIC = Buffer.from([0x28, 0xb5, 0x2f, 0xfd]);
 const results = [];
@@ -206,31 +208,48 @@ if (fs.existsSync(indexFile)) {
 const sessionsRoot = path.join(HOME, 'sessions');
 // v2 安装时间基准：index.js 的 mtime。晚于它的会话视为「v2 安装后的新会话」。
 const pluginMtime = fs.existsSync(indexFile) ? fs.statSync(indexFile).mtimeMs : 0;
-const dirs = recentSessionDirs(sessionsRoot, LIMIT);
+const allDirs = recentSessionDirs(sessionsRoot, SESSION_FILTER ? Number.POSITIVE_INFINITY : LIMIT);
+const dirs = SESSION_FILTER === null ? allDirs : allDirs.filter((dir) => dir.name.includes(SESSION_FILTER)).slice(0, LIMIT);
 if (dirs.length === 0) {
-  record('会话证据', STRICT ? 'FAIL' : 'WARN', `未找到会话目录：${sessionsRoot}`);
+  record('会话证据', STRICT ? 'FAIL' : 'WARN', `未找到会话目录：${sessionsRoot}${SESSION_FILTER ? `（过滤 ${SESSION_FILTER}）` : ''}`);
 } else {
   let headSeen = 0;
   let tailSeen = 0;
   let requestTailSeen = 0;
   let scanned = 0;
   let newScanned = 0;
+  const requestTailSources = {};
+  const requestTailDetails = [];
   for (const dir of dirs) {
     const events = loadEvents(dir.full);
     if (!events || events.length === 0) continue;
     scanned += 1;
     if (dir.mtime > pluginMtime) newScanned += 1;
     let systemText = '';
-    let runtimeText = '';
     for (const event of events) {
-      if (event.type === 'system/message') systemText += `\n${textOf(event.data?.message)}`;
-      if (event.type === 'user/message' && event.data?.message?.source?.kind === 'runtime-context') {
-        runtimeText += `\n${textOf(event.data.message)}`;
-      }
+      if (event.type === 'system/message') systemText += `\n${messageText(messageOf(event))}`;
     }
     if (systemText.includes('语言铁律')) headSeen += 1;
     if (systemText.includes('第一句') && systemText.includes('简体中文')) tailSeen += 1;
-    if (runtimeText.includes('第一句') && runtimeText.includes('简体中文')) requestTailSeen += 1;
+    // D 层：per-request 尾约束证据。接受两种形态（source.kind=runtime-context 或 user 正文含判据词），
+    // 避免旧版只读 data.message 导致的漏检。
+    const evidence = detectRequestTailEvidence(events);
+    if (evidence.found) {
+      requestTailSeen += 1;
+      requestTailSources[evidence.via] = (requestTailSources[evidence.via] ?? 0) + 1;
+      if (requestTailDetails.length < 3) {
+        requestTailDetails.push({
+          session: dir.name,
+          via: evidence.via,
+          channel: evidence.channel,
+          container: evidence.container,
+          marker: evidence.marker,
+          sectionNameSeen: evidence.sectionNameSeen,
+          seq: evidence.seq,
+          excerpt: evidence.excerpt,
+        });
+      }
+    }
   }
   const fallback = STRICT ? 'FAIL' : 'WARN';
   record(`头锚出现在 system（${headSeen}/${scanned} 个会话）`, headSeen > 0 ? 'PASS' : fallback, `扫描 ${scanned} 个会话`);
@@ -243,17 +262,23 @@ if (dirs.length === 0) {
     : newScanned > 0 && STRICT && usingInstalled
       ? 'FAIL'
       : 'WARN';
+  const viaSummary = Object.entries(requestTailSources).map(([via, count]) => `${via}×${count}`).join(' / ');
   record(
-    `per-request 约束出现在 runtime-context（${requestTailSeen}/${scanned} 个会话；v2 安装后新会话 ${newScanned} 个）`,
+    `per-request 约束出现在会话里（${requestTailSeen}/${scanned} 个会话；v2 安装后新会话 ${newScanned} 个）`,
     requestStatus,
     requestTailSeen > 0
-      ? 'v2 请求尾通道已生效'
+      ? `v2 请求尾通道已生效；来源 ${viaSummary}${requestTailDetails[0] ? `；样例 ${requestTailDetails[0].session} via=${requestTailDetails[0].via} channel=${requestTailDetails[0].channel ?? '?'} ${requestTailDetails[0].sectionNameSeen ? '命中 section=lang-rule:request-tail' : `marker=${requestTailDetails[0].marker}`}` : ''}`
       : !usingInstalled
         ? '当前检查的是未安装副本（--plugin），不做活体 FAIL 判定；装进 profile 后重跑'
         : newScanned > 0
           ? `v2 安装后的 ${newScanned} 个新会话里没有 context 证据，${STRICT ? '已判 FAIL' : '加 --strict 可判 FAIL'}`
           : '暂无 v2 安装后的新会话；新开一个会话后复测（此时 --strict 仅 WARN，不误判）',
   );
+  if (requestTailDetails.length > 0) {
+    for (const detail of requestTailDetails) {
+      if (!JSON_OUT) console.log(`    · ${detail.session} via=${detail.via} channel=${detail.channel ?? '?'} container=${detail.container} seq=${detail.seq ?? '?'}${detail.sectionNameSeen ? ' section=lang-rule:request-tail' : ''} marker="${detail.marker ?? '-'}" ${detail.excerpt ?? ''}`);
+    }
+  }
 }
 
 // ── 汇总 ────────────────────────────────────────────────────────────

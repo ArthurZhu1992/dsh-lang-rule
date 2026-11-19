@@ -3,6 +3,41 @@
 本文件记录 dsh-lang-rule 的重要变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 All notable changes to this project are documented here, in the spirit of Keep a Changelog and Semantic Versioning. Each entry is written once in Chinese and once in English.
 
+## [2.0.1] — 2026-11-19
+
+> 定位：**文档与检测工具修正；注入行为与 2.0.0 完全相同**（`index.js` 未改，sha256 `49e8918552a9b8e82270084e5d713eb930f826650a39a8907045052a4f0c1e06`）。
+
+### Fixed / 修复
+
+- **per-request 通道检测假阴性**：`tools/verify-installed.mjs` 旧版只读 `data.message.source`，而 dsh 0.2.2 的 runtime-context 快照落在 `data.source`（`data = { role, content, source }`），已生效的通道因此被误报为 degraded。现统一解包 `data.message` 与 `data` 两种形态，同时接受 `source.kind === 'runtime-context'` 与正文判据词两类证据，并输出 `via=user-system-reminder`；新增纯函数模块 `tools/lib/request-tail-detect.mjs`。
+- **撤回 2.0.0 文档里的错误结论**：「desktop 被 `includeRuntimeContext: false` 抑制、0/6 会话无 runtime-context、实际 4 section + mid」是假阴性导致的误判，已改为「desktop 上生效，4 section + 1 context」。
+- **数字更正**：headless 首句英文 `2/3` → **1/3 = 33.3%**（Wilson 95% `[6.1%, 79.2%]`，`out/live.json` 快照 `2026-11-19T00:09Z`）；语料重算 `262` → **261**（drift 3）、中文主导 `76.3%` → **76.2%**（`out/corpus.json` 快照 `2026-11-19T00:11Z`）。
+- **probe 引用**：`probe-e` 统一改为「会话前缀 `03d5a353` + `out/agent-probe-v2.json`」。
+
+### Changed / 变更
+
+- `tools/selftest.mjs`：28 项 → **32 项**（新增 D 层检测用例：`data.message` 与 `data` 两种形态都能命中、普通 user 消息不误报等）。
+- README、RELEASE-NOTES 的 desktop 段落同步改为「生效，不是降级；只有旧宿主无 `systemPrompt.context()` 才降级」。
+
+### Verified / 实测
+
+- `node tools/verify-installed.mjs` → **PASS**；`per-request 约束出现在会话里（3/10 个会话；v2 安装后新会话 8 个）`，`来源 user-system-reminder×3`；样例 `03d5a353 … via=user-system-reminder channel=runtime-context section=lang-rule:request-tail`。
+- `out/agent-probe-v2.json`（正确事件路径重算）：10 条 probe、**7 条** `containsLangRuleRequestTail: true`、`runtimeContextEvents` 合计 16。
+- `node tools/selftest.mjs` 32/32、`node --test tools/selftest.test.mjs` 8/8。
+
+### Compatibility / 兼容性
+
+- 配置键与注入行为不变；v1 / 2.0.0 的部署无需改动。
+
+### English summary
+
+- **Per-request detection false negative fixed**: `tools/verify-installed.mjs` used to read only `data.message.source`; dsh 0.2.2 runtime-context snapshots live in `data.source` (`data = { role, content, source }`), so a working channel was reported as degraded. It now unwraps both shapes, accepts `source.kind === 'runtime-context'` or the marker text, and reports `via=user-system-reminder`; new pure module `tools/lib/request-tail-detect.mjs`.
+- **Retracted the wrong 2.0.0 conclusion**: "desktop suppressed by `includeRuntimeContext: false`, 0/6 sessions, 4 sections + mid" was a detection false negative; desktop actually runs 4 sections + 1 context.
+- **Figures corrected**: headless first-sentence English `2/3` → **1/3 = 33.3%** (Wilson 95% `[6.1%, 79.2%]`, `out/live.json` 2026-11-19T00:09Z); corpus recomputed `262` → **261** (drift 3), Chinese-dominated `76.3%` → **76.2%** (`out/corpus.json` 2026-11-19T00:11Z).
+- **Probe reference**: `probe-e` → session prefix `03d5a353` + `out/agent-probe-v2.json`.
+- `selftest.mjs` 28 → **32** assertions; `verify-installed` reports PASS with `via=user-system-reminder`; the recomputed `agent-probe-v2.json` shows **7/10** probes with `containsLangRuleRequestTail: true` and 16 runtime-context events.
+- Injection behavior is identical to 2.0.0 (`index.js` unchanged, same sha256).
+
 ## [2.0.0] — 2026-11-19
 
 ### Added / 新增
@@ -54,11 +89,11 @@ All notable changes to this project are documented here, in the spirit of Keep a
 以下均为 2026-11-19 的快照数据，原文在 `work/lang-rule-tests/out/`（发布仓库不包含该目录，数字可复算）。
 
 1. **headless 3 probe 不足以证明判据成立**：`work/lang-rule-tests/out/live.json`（快照 `2026-11-19T00:09Z`）显示 3 条 probe 中首句英文 **1/3 = 33.3%**，Wilson 95% 区间 **[6.1%, 79.2%]**；区间下界 6.1% 仍高于 5% 阈值，**该轮未通过 <5% 判据**。要检验「首句英文 < 5%」，0 失败至少需要 n≈60；即使 0 失败，n=3 时区间上界也约 63%。
-2. **desktop profile 上 per-request 通道被抑制**：`dsh-norefuse` 的 `includeRuntimeContext: false` 让上下文快照整体关闭。v2 生效期的 6 条 probe 会话 **0/6 有 runtime-context 事件**（另有 v1 生效期 8 条对照同样为 0）。实际生效的是 4 个 section + mid，没有 request-tail；插件按设计进入 degraded 模式，不报错。
+2. **desktop 上 per-request 通道实际生效；此前的「0/6」是检测脚本假阴性**：会话 `03d5a353-2af7-4f71-bdf2-42069a4f0249` 的 `user/message` 事件里，`data.source = {"kind":"runtime-context","form":"snapshot","sections":[…]}`，其中 `sections` 含 `lang-rule:request-tail` 文本（「【本步语言要求】第一句必须是简体中文…」），`surfaceOp = append`；同一会话的 `system/message` 同时含头锚、子智能体锚、mid 与尾锚四段。因此 desktop 上运行的是 **4 section + 1 context**，不是降级。`out/agent-probe-v2.json` 已在 2026-11-19T00:16Z 按正确事件路径重算：10 条 probe 中 **7 条 `containsLangRuleRequestTail: true`**、`runtimeContextEvents` 合计 **16**、0 事件会话 **0**；早先按 `data.message.source` 统计出的 `runtimeContextEvents: 0`（6 条）与 `agent-probe.json`（8 条）是假阴性。检测器已在 2.0.1 修正为兼容 `data.source` 并标注 `via`。
 3. **历史语料零回归**：`work/lang-rule-tests/out/corpus.json`（快照 `2026-11-19T00:11Z`）基线 264 个会话、同哈希重算 **261** 个（drift 3，均为活跃会话在基线快照后继续写入）；英文主导会话 **62 → 62**（Δ0），中文主导率 **76.5% → 76.2%**（Δ −0.3pp，阈值 ≤2pp），同哈希会话主导语言全部一致。
 
 - **A 3-probe headless run is not enough to claim the <5% target**: `work/lang-rule-tests/out/live.json` (snapshot `2026-11-19T00:09Z`) shows first-sentence English at **1/3 = 33.3%**, Wilson 95% CI **[6.1%, 79.2%]**; the lower bound (6.1%) is still above the 5% threshold, so **this run did not pass the <5% criterion**. Testing "<5%" with zero failures needs n≈60; even with zero failures the n=3 upper bound is about 63%.
-- **The per-request channel is suppressed on the desktop profile**: `dsh-norefuse` sets `includeRuntimeContext: false`, turning runtime-context snapshots off. In the v2 window, **0 of 6** probe sessions had runtime-context events (a v1-window batch of 8 was also 0). What actually runs is four sections plus mid; there is no request-tail, and the plugin degrades without errors.
+- **The per-request channel does work on desktop; the earlier "0/6" was a detection false negative**: in session `03d5a353-2af7-4f71-bdf2-42069a4f0249`, the `user/message` event carries `data.source = {"kind":"runtime-context","form":"snapshot","sections":[…]}` with a `lang-rule:request-tail` section, and `surfaceOp = append`; the same session's `system/message` contains all four sections. Desktop therefore runs **4 sections + 1 context**, not a degraded mode. `out/agent-probe-v2.json` was recomputed at 2026-11-19T00:16Z through the correct event path: **7 of 10** probes have `containsLangRuleRequestTail: true`, 16 runtime-context events in total, and **0** probes with zero events. The earlier `runtimeContextEvents: 0` values (6 probes, plus 8 in `agent-probe.json`) were false negatives from reading only `data.message.source`; the detector was fixed in 2.0.1 to accept `data.source` and report `via`.
 - **No historical-corpus regression**: `work/lang-rule-tests/out/corpus.json` (snapshot `2026-11-19T00:11Z`) — baseline 264 sessions, **261** recomputed with identical hashes (drift 3, all active sessions that kept writing after the baseline snapshot); English-dominated sessions **62 → 62** (Δ0), Chinese-dominated rate **76.5% → 76.2%** (Δ −0.3pp, threshold ≤2pp), and every same-hash session kept its dominant language.
 
 ### Known limitations / 已知限制

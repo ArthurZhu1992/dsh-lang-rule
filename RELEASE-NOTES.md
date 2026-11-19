@@ -3,6 +3,15 @@
 > 说明：`v1.0.0` tag 打在初始提交 `f1e0acf`，`RELEASE-NOTES.md` 在 v1 发布后才进入 `main`，因此 v1 tag 树不含本文件，不是漏提交。`v2.0.0` 的 tag 打在包含本文件与 `CHANGELOG.md` 的最终提交上。
 > 详细的逐项变更、实测数据与已知限制见 [`CHANGELOG.md`](./CHANGELOG.md)。
 
+## 2.0.1 — 2026-11-19
+
+**文档与检测工具修正；注入行为与 2.0.0 完全相同（`index.js` 未改，sha256 不变）。**
+
+- `tools/verify-installed.mjs` 修复 per-request 证据假阴性：兼容 `data.source` 与 `data.message` 两种事件形态，输出 `via=user-system-reminder`；新增纯函数模块 `tools/lib/request-tail-detect.mjs`。
+- 撤回「desktop 被 `includeRuntimeContext: false` 抑制、降级为 4 section + mid」的错误结论；实测 desktop 为 **4 section + 1 context**（会话 `03d5a353` 取证）。
+- 数字更正：headless 首句英文 **1/3**（Wilson 95% `[6.1%, 79.2%]`）、语料重算 **261**（drift 3）、中文主导率 **76.2%**。
+- `tools/selftest.mjs` 28 → **32 项**。
+
 ## 2.0.0 — 2026-11-19
 
 ### 新增
@@ -25,7 +34,7 @@
 ### 实测口径（快照 `2026-11-19T00:09Z` / `00:11Z`）
 
 - headless 3 probe（`out/live.json`）：首句英文 **1/3 = 33.3%**，Wilson 95% 区间 **[6.1%, 79.2%]**；下界 6.1% 仍高于 5% 阈值，**未通过 <5% 判据**（0 失败需 n≈60）。
-- desktop profile：`dsh-norefuse` 的 `includeRuntimeContext: false` 使 per-request 通道被抑制，v2 生效期 6 条 probe **0/6 有 runtime-context 事件**，实际运行为 4 个 section + mid。
+- desktop profile：per-request 通道**生效**——会话 `03d5a353` 的 `user/message` 事件里 `data.source.kind = "runtime-context"`、`sections` 含 `lang-rule:request-tail`（`surfaceOp=append`）；早期按 `data.message.source` 统计的 0 命中是假阴性，检测器已在 2.0.1 修正。
 - 历史语料零回归（`out/corpus.json`）：同哈希重算 **261** 个（drift 3），英文主导会话 **62 → 62**，中文主导率 **76.5% → 76.2%**（Δ −0.3pp）。
 - 已知可绕过：`out/agent-probe-v2.json` 中 session `03d5a353` 以 `The task:` 开头（不在禁词表内），该会话首句与整段仍是英文。
 

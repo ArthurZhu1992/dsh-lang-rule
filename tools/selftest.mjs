@@ -30,6 +30,7 @@ import {
   HOST_CONTEXT_MAX_FALLBACK,
   requestTailNeedsCommit,
 } from '../index.js';
+import { detectRequestTailEvidence } from './lib/request-tail-detect.mjs';
 
 let passed = 0;
 const failures = [];
@@ -367,6 +368,76 @@ test('context 文本固定（静态字符串，无 provider 函数）以保证�
   apply(makeCtx(registry), {});
   assertEqual(typeof registry.contexts[0].text, 'string', 'context.text 必须是静态字符串');
   assertEqual(typeof registry.sections[3].text, 'string', '尾锚 text 必须是静态字符串');
+});
+
+// ── 7. per-request 证据检测（verify-installed 的 D 层判定） ────────────
+test('D 层检测：source.kind 非 runtime-context 但正文含 REQUEST_TEXT 的 user 消息也算证据', () => {
+  const event = {
+    type: 'user/message',
+    seq: 12,
+    data: {
+      role: 'user',
+      source: { kind: 'agent-inbox' },
+      content: [{ type: 'text', text: `<system-reminder>\n${REQUEST_TEXT}\n</system-reminder>` }],
+    },
+  };
+  const evidence = detectRequestTailEvidence([event]);
+  assertEqual(evidence.found, true, '应识别为 per-request 证据');
+  assertEqual(evidence.via, 'user-system-reminder', '来源应标注 user-system-reminder');
+  assertEqual(evidence.container, 'user-message/system-reminder', '应标注 system-reminder 包裹');
+  assert(evidence.marker !== null, '应命中判据词');
+});
+
+test('D 层检测：runtime-context 快照（data 直接是消息体，无 message 包装）也能识别', () => {
+  const event = {
+    type: 'user/message',
+    seq: 12,
+    data: {
+      role: 'user',
+      id: 'x',
+      source: {
+        kind: 'runtime-context',
+        form: 'snapshot',
+        sections: [{ name: 'lang-rule:request-tail', text: REQUEST_TEXT }],
+      },
+      content: [{ type: 'text', text: `<system-reminder>\n${REQUEST_TEXT}\n</system-reminder>` }],
+    },
+  };
+  const evidence = detectRequestTailEvidence([event]);
+  assertEqual(evidence.found, true, '无 data.message 包装时也必须识别');
+  assertEqual(evidence.via, 'user-system-reminder', '注入落地形态是 user 消息的 system-reminder');
+  assertEqual(evidence.channel, 'runtime-context', '通道应记录 runtime-context');
+  assertEqual(evidence.sectionNameSeen, true, '应看到 lang-rule:request-tail section');
+  assertEqual(evidence.container, 'user-message/system-reminder', '应标注 system-reminder 包裹');
+});
+
+test('D 层检测：data.message.source 包装形态兼容（旧事件形状）', () => {
+  const event = {
+    type: 'user/message',
+    seq: 5,
+    data: {
+      turn: 1,
+      step: 1,
+      message: {
+        role: 'user',
+        source: { kind: 'runtime-context', form: 'snapshot', sections: [{ name: 'lang-rule:request-tail', text: REQUEST_TEXT }] },
+        content: [{ type: 'text', text: `<system-reminder>\n${REQUEST_TEXT}\n</system-reminder>` }],
+      },
+    },
+  };
+  const evidence = detectRequestTailEvidence([event]);
+  assertEqual(evidence.found, true, 'data.message.source 形态必须同样识别');
+  assertEqual(evidence.via, 'user-system-reminder');
+  assertEqual(evidence.sectionNameSeen, true);
+});
+
+test('D 层检测：无判据词的普通 user 消息不误报', () => {
+  const events = [
+    { type: 'user/message', seq: 3, data: { role: 'user', content: [{ type: 'text', text: '帮我跑一下测试' }] } },
+    { type: 'system/message', seq: 4, data: { message: { role: 'system', content: [{ type: 'text', text: REQUEST_TEXT }] } } },
+  ];
+  const evidence = detectRequestTailEvidence(events);
+  assertEqual(evidence.found, false, '普通 user 消息与 system 文本都不算 per-request 证据');
 });
 
 // ── 汇总 ────────────────────────────────────────────────────────────

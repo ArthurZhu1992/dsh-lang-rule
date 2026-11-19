@@ -7,7 +7,7 @@
 - 版本：`2.0.0`（v1 为 `1.0.0`，配置向后兼容）
 - 运行要求：dsh ≥ 0.2.0；不 import 任何 dsh/cordis 内部模块，服务缺失即静默降级
 - 零网络、零写入：插件只注册提示词贡献，工具只读会话文件
-- 部署注意：若 profile 中其它插件设置了 `includeRuntimeContext: false`（桌面端 `dsh-norefuse` 即如此），宿主的 runtime-context 快照会被整体关闭，per-request 通道自动降级为 4 个 section + mid；自查用 `tools/verify-installed.mjs --strict`
+- 部署注意：desktop profile 上 per-request 通道**生效**，以宿主生成的 user 角色 `<system-reminder>` 快照注入（`event.data.source.kind = "runtime-context"`，`surfaceOp = "append"`，`sections` 含 `lang-rule:request-tail`）；降级只发生在宿主没有 `systemPrompt.context()` 的旧版本，用 `tools/verify-installed.mjs --strict` 自查（输出 `via=user-system-reminder` 即生效）
 
 ---
 
@@ -160,7 +160,7 @@ const CONTEXT_ORDERS = { WORKING_DIRECTORY: 100, SANDBOX_POLICY: 110, APPROVAL_P
 ## 工具
 
 ```bash
-# 注册契约自检（假 ctx，28 项断言，退出码 0 = 全过）
+# 注册契约自检（假 ctx，32 项断言，退出码 0 = 全过）
 node tools/selftest.mjs
 
 # node:test 单测 8 项：per-request 去重、requestTail=off 回退、config 归一化、order、同名冲突
@@ -225,7 +225,7 @@ dsh plugin --profile <your-profile> remove dsh-lang-rule
 
 - per-request 通道依赖宿主把 runtime context 快照 append 在 claimed 消息之后（dsh 0.2.2-rc.3 行为）。宿主若改动该投影顺序，约束的「最靠后」性质会退化；用 `tools/verify-installed.mjs`、`tools/lang-audit.mjs` 复测 `head+tail+request` 层即可发现。
 - AgentTeams 英文分派模板本身不在本插件范围内（不能改 AgentTeams），插件只能在提示词侧抵消。
-- 插件不保证 100% 中文：它把「首句英文率」和「英文主导率」压到尽可能低，量化验收由外部 harness 用 `lang-audit --json` 的 `summary.byAnchorLayer` 完成。
+- 插件不能保证每次都输出中文：它把「首句英文率」和「英文主导率」压到尽可能低，量化验收由外部 harness 用 `lang-audit --json` 的 `summary.byAnchorLayer` 完成。
 
 ## 证据文件
 
