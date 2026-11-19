@@ -1,18 +1,16 @@
-# dsh-lang-rule v3
+# dsh-lang-rule
 
-部署级语言策略插件：让 **每一个** dsh agent ——主 agent、subagent、AgentTeams 成员、workflow 子智能体、后台任务——的推理（thinking / reasoning）与可见输出全程简体中文。
+## 所思所言，皆成中文
 
-> v3 的核心变化：**把首句从「靠黑名单堵」变成「可判定」**。判据改成「第一句必须包含中文字符、不得以 ASCII 字母开头」，配 2 个中文 few-shot，并让 per-request 约束文本随 step 轮换（对抗长任务稀释）。黑名单降级为辅助提示——**枚举永远不完备**。
->
-> 1.0.0 内置 **token 预算**：三档 preset（minimal / standard / full）+ 变体策略三态（`off` / `lazy` / `step`，默认 `lazy`），把「用 token 换约束强度」的 trade-off 显式化并可关。成本表见 [token 成本](#token-成本100)。
->
-> **开发期修复（已并入 1.0.0）**：`lazy` 的切换计数单位从「provider 调用次数」改为 **step**（宿主一 step 会多次调用 provider，按调用计数会被放大）；`lazy` 与 `step` 都在工具结果后的下一个 step 使用「工具结果之后」变体；**1.0.0 把它的作用域从「下一次调用」提升到「整个下一个 step」**——否则该 step 的 `refreshContext()` 会把变体在同一步消费掉（t37 实测命中率仅 1/3）。见[为什么 lazy 曾经没兑现](#为什么-lazy-曾经没兑现开发期修复)。
+起笔即中文。DSH 的思考（reasoning）默认会跑英文，长会话、子智能体、英文派单尤其明显——
+插件把它拉回来，并且让这件事可以被验证。
 
-- 版本：`1.0.0`（市场首发；开发期快照 2.x / 3.x 已归档，见 CHANGELOG 附录）
-- 运行要求：dsh ≥ 0.2.0；不 import 任何 dsh/cordis 内部模块，服务缺失即静默降级
-- 零网络、零写入：插件只注册提示词贡献，工具只读会话文件
+- 首句定生死：首句英文 → 整段英文 81.1%；首句中文 → 1.1%（264 会话实测）
+- 一线到底：主 agent、子智能体、AgentTeams、workflow 子智能体、后台任务
+- 说得出就查得到：`verify-installed --strict` 一条命令，确认它在你机器上真的生效
 
 ---
+
 
 ## v3 的依据：我们自己的实测（不是竞品文案）
 

@@ -4,6 +4,18 @@
 
 **1.0.0 是本仓库的市场首发版本。** 开发期曾打过 2.x / 3.x 快照 tag（一天内多次迭代），它们从未对外发布，对应的 tag 与 Release 已删除归档；旧 commit 仍保留在 git 历史中，本文件以附录形式保留其记录。对外只认 1.0.0 及之后的正式版本。
 
+## [Unreleased]
+
+### Changed / 变更
+
+- README 首屏改版为「起笔即中文」定位：首屏直接给出三条可验证承诺（首句决定整段语言、覆盖全部 agent 角色、`verify-installed --strict` 一条命令自查），不再以版本号叙事开场。
+- CHANGELOG 中一处完整会话 UUID 缩为 8 位前缀（`03d5a353`），与其余引用保持一致，避免把完整会话标识写进发布文档。
+
+### English
+
+- README hero rewritten around "the first line lands in Chinese": three verifiable promises up front (first sentence decides the trace, every agent role covered, one-command self-check), with no version-number narrative.
+- One full session UUID in this file was shortened to its 8-character prefix (`03d5a353`) for consistency.
+
 ## [1.0.0] — 2026-11-19
 
 ### Added / 新增
@@ -299,11 +311,11 @@
 以下均为 2026-11-19 的快照数据，原文在 `work/lang-rule-tests/out/`（发布仓库不包含该目录，数字可复算）。
 
 1. **headless 3 probe 不足以证明判据成立**：`work/lang-rule-tests/out/live.json`（快照 `2026-11-19T00:09Z`）显示 3 条 probe 中首句英文 **1/3 = 33.3%**，Wilson 95% 区间 **[6.1%, 79.2%]**；区间下界 6.1% 仍高于 5% 阈值，**该轮未通过 <5% 判据**。要检验「首句英文 < 5%」，0 失败至少需要 n≈60；即使 0 失败，n=3 时区间上界也约 63%。
-2. **desktop 上 per-request 通道实际生效；此前的「0/6」是检测脚本假阴性**：会话 `03d5a353-2af7-4f71-bdf2-42069a4f0249` 的 `user/message` 事件里，`data.source = {"kind":"runtime-context","form":"snapshot","sections":[…]}`，其中 `sections` 含 `lang-rule:request-tail` 文本（「【本步语言要求】第一句必须是简体中文…」），`surfaceOp = append`；同一会话的 `system/message` 同时含头锚、子智能体锚、mid 与尾锚四段。因此 desktop 上运行的是 **4 section + 1 context**，不是降级。`out/agent-probe-v2.json` 已在 2026-11-19T00:16Z 按正确事件路径重算：10 条 probe 中 **7 条 `containsLangRuleRequestTail: true`**、`runtimeContextEvents` 合计 **16**、0 事件会话 **0**；早先按 `data.message.source` 统计出的 `runtimeContextEvents: 0`（6 条）与 `agent-probe.json`（8 条）是假阴性。检测器已在 2.0.1 修正为兼容 `data.source` 并标注 `via`。
+2. **desktop 上 per-request 通道实际生效；此前的「0/6」是检测脚本假阴性**：会话 `03d5a353` 的 `user/message` 事件里，`data.source = {"kind":"runtime-context","form":"snapshot","sections":[…]}`，其中 `sections` 含 `lang-rule:request-tail` 文本（「【本步语言要求】第一句必须是简体中文…」），`surfaceOp = append`；同一会话的 `system/message` 同时含头锚、子智能体锚、mid 与尾锚四段。因此 desktop 上运行的是 **4 section + 1 context**，不是降级。`out/agent-probe-v2.json` 已在 2026-11-19T00:16Z 按正确事件路径重算：10 条 probe 中 **7 条 `containsLangRuleRequestTail: true`**、`runtimeContextEvents` 合计 **16**、0 事件会话 **0**；早先按 `data.message.source` 统计出的 `runtimeContextEvents: 0`（6 条）与 `agent-probe.json`（8 条）是假阴性。检测器已在 2.0.1 修正为兼容 `data.source` 并标注 `via`。
 3. **历史语料零回归**：`work/lang-rule-tests/out/corpus.json`（快照 `2026-11-19T00:11Z`）基线 264 个会话、同哈希重算 **261** 个（drift 3，均为活跃会话在基线快照后继续写入）；英文主导会话 **62 → 62**（Δ0），中文主导率 **76.5% → 76.2%**（Δ −0.3pp，阈值 ≤2pp），同哈希会话主导语言全部一致。
 
 - **A 3-probe headless run is not enough to claim the <5% target**: `work/lang-rule-tests/out/live.json` (snapshot `2026-11-19T00:09Z`) shows first-sentence English at **1/3 = 33.3%**, Wilson 95% CI **[6.1%, 79.2%]**; the lower bound (6.1%) is still above the 5% threshold, so **this run did not pass the <5% criterion**. Testing "<5%" with zero failures needs n≈60; even with zero failures the n=3 upper bound is about 63%.
-- **The per-request channel does work on desktop; the earlier "0/6" was a detection false negative**: in session `03d5a353-2af7-4f71-bdf2-42069a4f0249`, the `user/message` event carries `data.source = {"kind":"runtime-context","form":"snapshot","sections":[…]}` with a `lang-rule:request-tail` section, and `surfaceOp = append`; the same session's `system/message` contains all four sections. Desktop therefore runs **4 sections + 1 context**, not a degraded mode. `out/agent-probe-v2.json` was recomputed at 2026-11-19T00:16Z through the correct event path: **7 of 10** probes have `containsLangRuleRequestTail: true`, 16 runtime-context events in total, and **0** probes with zero events. The earlier `runtimeContextEvents: 0` values (6 probes, plus 8 in `agent-probe.json`) were false negatives from reading only `data.message.source`; the detector was fixed in 2.0.1 to accept `data.source` and report `via`.
+- **The per-request channel does work on desktop; the earlier "0/6" was a detection false negative**: in session `03d5a353`, the `user/message` event carries `data.source = {"kind":"runtime-context","form":"snapshot","sections":[…]}` with a `lang-rule:request-tail` section, and `surfaceOp = append`; the same session's `system/message` contains all four sections. Desktop therefore runs **4 sections + 1 context**, not a degraded mode. `out/agent-probe-v2.json` was recomputed at 2026-11-19T00:16Z through the correct event path: **7 of 10** probes have `containsLangRuleRequestTail: true`, 16 runtime-context events in total, and **0** probes with zero events. The earlier `runtimeContextEvents: 0` values (6 probes, plus 8 in `agent-probe.json`) were false negatives from reading only `data.message.source`; the detector was fixed in 2.0.1 to accept `data.source` and report `via`.
 - **No historical-corpus regression**: `work/lang-rule-tests/out/corpus.json` (snapshot `2026-11-19T00:11Z`) — baseline 264 sessions, **261** recomputed with identical hashes (drift 3, all active sessions that kept writing after the baseline snapshot); English-dominated sessions **62 → 62** (Δ0), Chinese-dominated rate **76.5% → 76.2%** (Δ −0.3pp, threshold ≤2pp), and every same-hash session kept its dominant language.
 
 ### Known limitations / 已知限制
