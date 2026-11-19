@@ -30,6 +30,14 @@ All notable changes to this project are documented here, in the spirit of Keep a
 
 - 配置键与注入行为不变；v1 / 2.0.0 的部署无需改动。
 
+### Known issues / 已知问题
+
+- **`v2.0.1` tag 树与 `main` 的文档差异**：`v2.0.1` tag（`6791327`）内的 `README.md` 版本行仍写 `2.0.0`，自查项名仍是旧文案「per-request 约束出现在 runtime-context」；这两处已在 `main` 的后续文档提交修正。差异仅限文档：`index.js` 未变（sha256 `49e8918552a9b8e82270084e5d713eb930f826650a39a8907045052a4f0c1e06`），注入行为相同。
+- **`v2.0.0` tag 树内的 `CHANGELOG.md`** 仍是发布时的旧数字与旧结论（见上方对账提示）；2.0.1 起以 `main` 上的 `CHANGELOG.md` 为准。
+
+- **Documentation-only difference between the `v2.0.1` tag tree and `main`**: inside tag `v2.0.1` (`6791327`), `README.md` still shows version `2.0.0` and the old self-check item name; both were corrected in follow-up documentation commits on `main`. The difference is documentation only — `index.js` is unchanged (`49e8918552a9b8e82270084e5d713eb930f826650a39a8907045052a4f0c1e06`) and injection behavior is identical.
+- **The `CHANGELOG.md` inside tag `v2.0.0`** still carries the old numbers and conclusions (see the reconciliation note above); from 2.0.1 onward, the `CHANGELOG.md` on `main` is authoritative.
+
 ### English summary
 
 - **Per-request detection false negative fixed**: `tools/verify-installed.mjs` used to read only `data.message.source`; dsh 0.2.2 runtime-context snapshots live in `data.source` (`data = { role, content, source }`), so a working channel was reported as degraded. It now unwraps both shapes, accepts `source.kind === 'runtime-context'` or the marker text, and reports `via=user-system-reminder`; new pure module `tools/lib/request-tail-detect.mjs`.
