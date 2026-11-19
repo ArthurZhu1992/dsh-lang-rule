@@ -1,9 +1,68 @@
 # Changelog
 
-本文件记录 dsh-lang-rule 的重要变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
-All notable changes to this project are documented here, in the spirit of Keep a Changelog and Semantic Versioning. Each entry is written once in Chinese and once in English.
+本文件记录 dsh-lang-rule 的对外版本变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/) 与 [VERSIONING.md](./VERSIONING.md)。
 
-## [3.1.3] — 2026-11-19
+**1.0.0 是本仓库的市场首发版本。** 开发期曾打过 2.x / 3.x 快照 tag（一天内多次迭代），它们从未对外发布，对应的 tag 与 Release 已删除归档；旧 commit 仍保留在 git 历史中，本文件以附录形式保留其记录。对外只认 1.0.0 及之后的正式版本。
+
+## [1.0.0] — 2026-11-19
+
+### Added / 新增
+
+- **五通道注入**（order 与语义稳定）：`section lang-rule` @ `-900`（头部铁律）、`section lang-rule:subagent` @ `-880`（子智能体/团队/后台任务点名）、`section lang-rule:mid` @ `5100`（工具 schema 之后重申）、`section lang-rule:tail` @ `90050`（尾部首句锚）、`context lang-rule:request-tail` @ `500`（per-request runtime-context，`required: true`）。
+- **可判定首句判据**：第一句必须包含中文字符（U+4E00–U+9FFF），且不得以 ASCII 字母开头。原「禁止英文起手短语」黑名单降级为 `ENGLISH_OPENER_HINTS` 辅助提示（明确标注枚举不完备、不得作为唯一判据）。
+- **2 条中文 few-shot**（总长 41 字符，无英文示例）。
+- **step 级上下文变体**：`REQUEST_VARIANTS` 三版按 step 轮换；`tool/result` 之后的**整个下一个 step** 使用「工具结果之后」变体（`pendingToolStep → toolStepActive` 两态）；`contextVariant` 三态 `off` / `lazy`（默认）/ `step`，旧布尔 `false → off`、`true → step`。
+- **三档 token preset**（`config.preset`，默认 `full`）：`minimal` 125 token（≤130，tail + context）、`standard` 181（≤300，五通道紧凑文本）、`full` 337（≤400，完整文本 + few-shot）。
+- **双指标与长任务分组**：`tools/lib/lang-metrics.mjs` 的 `segmentMetrics()` 分开输出首句语言与整段 CJK；`lang-audit --json` 提供 `summary.byAnchorLayer`、`summary.firstSentenceVsBody`、`summary.longTasks`。
+- **工具链**：`tools/selftest.mjs`（53 项注册契约断言）、`tools/selftest.test.mjs`（`node:test` 8 项）、`tools/verify-installed.mjs`（PASS / WARN / FAIL，支持 `--strict`、`--json`、`--plugin`、`--profile`、`--session`）、`tools/lang-audit.mjs`（`--json`）、`tools/measure-appends.mjs`（append/step 实测 + `--dry-run` 模拟）、`tools/measure-tool-variant.mjs`（命中率模拟 / 旧实现实测 / 真实 step 序列重放）。
+- **CI**：`.github/workflows/verify.yml`（push / PR：7 文件 `node --check`、selftest、node:test、verify-installed、measure-appends `--dry-run`、measure-tool-variant `--simulate`、manifest 校验，Node 22.15 / 24）；`.github/workflows/publish.yml`（tag 推送：`tag == v<version>`、CHANGELOG 首段 == version、`tag commit == main`、tag 树与 main 一致）。
+- **文档**：中英 README（含「如何验证是否生效」）、`docs/DESIGN.md`（order 推导与宿主源码定位）、`RELEASE-NOTES.md`、`VERSIONING.md`、中英 locale、MIT LICENSE、纯几何 `icon.svg`。
+
+- **Five channels**: head `-900`, subagent `-880`, mid `5100`, tail `90050`, per-request context `500` (`required: true`).
+- **Decidable first-sentence rule** (CJK character required, no ASCII first letter); the phrase blacklist is an explicit, incomplete hint list.
+- **Two Chinese few-shot examples**, three step-level context variants (`off` / `lazy` / `step`) with the tool-result variant covering the whole next step.
+- **Three token presets** (125 / 181 / 337), dual metrics, long-task grouping, the full tooling set, and two CI workflows.
+
+### Verified / 实测与限制（真实数据，不美化）
+
+- **t24 批量 probe**（n=75，short 45 / mid 15 / long 15，`preset=full`、`contextVariant=lazy`）：首句英文 **8/75 = 10.7%**，Wilson 95% **[5.5%, 19.7%]**；v2 参考（n=16）25.0% `[10.2%, 49.5%]`。区间重叠 → **无显著变化**；下界 5.5% 高于 5% → **未达到 5% 目标**。
+- **分组**：short `1/45 = 2.2%`、mid `5/15 = 33.3%`、long `2/15 = 13.3%`（CJK 0.360，工具调用均值 23.9）。**mid 是新的失守高发区**。
+- **t37 工具结果变体**：旧实现命中率 **1/3**；修复后真实会话 `2a6b3aee` 重放 **10/10**，`6b2fa958`（1652 step）全 HIT。
+- **成本（append/step）**：`0.35` 为 20 step × 2 调用**模拟**下界；`0.783` 为开发期 3.1.0 实测（按 provider 调用计数被放大）；`0.479` 为开发期 3.1.2 多步会话实测基线。**0.479 不是 1.0.0 的定值**：1.0.0 把工具结果变体扩到整个 step，理论上略抬高 lazy 成本，部署后需复跑 `measure-appends` 更新。
+- **历史语料无回归**：261 会话重算中文主导 76.2%（−0.3pp），英文主导 62（不变）；static 层 42 PASS / 0 FAIL / 0 WARN。
+- **不声称达标**：t37 的 mid 组 20%（n=5）样本量不足以证明改善；1.0.0 的目标是「约束可判定、命中率与成本可解释」，不是「已把首句英文压到 5% 以下」。
+
+- **t24 (n=75)**: first-sentence English **8/75 = 10.7%**, Wilson 95% **[5.5%, 19.7%]**; overlapping with the v2 reference → **no significant change**, and the 5% target **was not met**.
+- **t37**: tool-result variant hit rate improved from **1/3** to **10/10** replay on `2a6b3aee`.
+- **Cost**: `0.35` is a simulation, `0.783` was the 3.1.0 measurement (inflated), `0.479` is the 3.1.2 multi-step baseline — **not** 1.0.0's number; re-run `measure-appends` after deploying.
+- **No success claim**: t37's mid group (20%, n=5) is too small; 1.0.0 makes the constraint decidable and the cost explainable.
+
+### Known limitations / 已知限制
+
+- **旧宿主无 `systemPrompt.context()`** 时降级为 4 个 section，无 per-request 尾注（`logger.debug` 记 `context-api-unavailable`）；用 `verify-installed --strict` 自查。
+- **整包 sections 去重**：per-request 快照按整包比较，宿主自身 runtime section 变化时整包重发，尾注随之重复出现一次。
+- **「不以此 ASCII 字母开头」是可判定判据，但内容仍可绕过**：模型理论上可先写一个中文字符再整段英文；黑名单只是辅助提示（`The task:` 曾绕过旧版）。
+- **mid 组尚未被新机制验证**（t24 33.3%、t37 20%/n=5 均不足以证明改善）。
+- **lazy 成本待部署后复测**；0.479 是开发期基线。
+- 无 UI、无多语言、未发布 npm；AgentTeams 英文派单模板本身不由本插件修改。
+
+- Old hosts without `systemPrompt.context()` degrade to four sections; the per-request snapshot is deduplicated as a whole bundle; the decidable rule still cannot prevent a CJK-then-English trace; the mid group is unverified; lazy cost needs a post-deploy re-measure; no UI, no npm, no multi-language.
+
+### Compatibility / 兼容性
+
+- `contextVariant` 三态与旧布尔映射（`false → off`、`true → step`）保持；三档 preset 预算固定为 125 / 181 / 337。
+- v1 的 `text`、`order`、`sectionName`、`tailText`、`tailOrder`、`tailSectionName`、`tailEnabled` 继续有效；1.0.0 起新增键都有默认值。
+- 五通道 order、判据文本、preset 预算在 1.0.0 内不再变动（见 [VERSIONING.md](./VERSIONING.md)）。
+
+- Legacy keys keep working; new keys have defaults; channel orders, rule text and preset budgets are frozen for 1.0.x.
+
+---
+
+## 附录：开发期记录（未对外发布）
+
+以下为开发期快照（2.x / 3.x），**从未对外发布**，仅作历史留存；对应 tag 与 Release 已删除，旧 commit 仍在 git 历史中。对外版本请只看 1.0.0 及之后。
+
+### 开发期快照 3.1.3 — 2026-11-19（未对外发布）
 
 > 修复轮次记录：t37 实测发现「工具结果之后」变体命中率仅 1/3 → t38 修复（版本保持 3.1.3，不跳号）→ t39 审查 pass。**注入判据、五通道 order（`-900` / `-880` / `5100` / `90050` / `500`）与三档预算（125 / 181 / 337）均未变。**
 
@@ -43,7 +102,7 @@ All notable changes to this project are documented here, in the spirit of Keep a
 
 - The three `contextVariant` modes, legacy boolean mapping, and preset budgets are unchanged; v1 / v2 config keys keep working.
 
-## [3.1.2] — 2026-11-19
+### 开发期快照 3.1.2 — 2026-11-19（未对外发布）
 
 > 合并 3.1.1 与 3.1.2 的修复发布（3.1.1 未单独打 tag）。**注入判据、五通道 order（`-900` / `-880` / `5100` / `90050` / `500`）与三档预算均未变。**
 
@@ -82,7 +141,7 @@ All notable changes to this project are documented here, in the spirit of Keep a
 
 - The three `contextVariant` modes and legacy boolean mapping are unchanged; preset budgets (125 / 181 / 337) are unchanged; v1 / v2 config keys keep working.
 
-## [3.1.0] — 2026-11-19
+### 开发期快照 3.1.0 — 2026-11-19（未对外发布）
 
 > 定位：token 预算可配置、可度量；判据与通道零改动（`index.js` 变化仅为文本常量与 preset 分支，五通道 order 仍 `-900` / `-880` / `5100` / `90050` / `500`）。
 
@@ -105,7 +164,7 @@ All notable changes to this project are documented here, in the spirit of Keep a
 - **Cost for 20 steps** (full, context ≈86 tokens): v2 fixed ≈86, v3 lazy ≈602 (7 appends), v3 step ≈1720 (20 appends); standard+lazy ≈238, minimal+lazy ≈602.
 - **selftest now 45 assertions**, including preset budgets, lazy sequence, normalization, orthogonal combinations, feature parity, and text-length budgets.
 
-## [3.0.0] — 2026-11-19
+### 开发期快照 3.0.0 — 2026-11-19（未对外发布）
 
 > 定位：把「禁止英文起手短语」换成可判定判据，并为长任务与子智能体补上上下文中段与逐 step 变体。**注意：t24 的批量实测结论是「无显著变化」且未达到 5% 目标，见下方 Verified 段。**
 
@@ -145,7 +204,7 @@ All notable changes to this project are documented here, in the spirit of Keep a
 - v1 / v2 configuration keys keep working; new `preset` and `contextVariant` keys default to `full` / `lazy`.
 - The five channel orders are unchanged; `index.js` has no imports.
 
-## [2.0.1] — 2026-11-19
+### 开发期快照 2.0.1 — 2026-11-19（未对外发布）
 
 > 定位：**文档与检测工具修正；注入行为与 2.0.0 完全相同**（`index.js` 未改，sha256 `49e8918552a9b8e82270084e5d713eb930f826650a39a8907045052a4f0c1e06`）。
 > 对账提示：`v2.0.0` tag 树内的 `CHANGELOG.md` 仍是发布时的旧数字（headless 2/3、重算 262、中文主导 76.3%，以及「desktop 被 `includeRuntimeContext:false` 抑制」的错误结论）；本文件是 2.0.1 起的修正版。拿 tag 与 `main` 对账时，以本条说明为准。`v2.0.1` tag 树内为本修正版；`main` 之后的文档小修（版本号、自查项命名）属文档提交，不改变注入行为。
@@ -189,7 +248,7 @@ All notable changes to this project are documented here, in the spirit of Keep a
 - `selftest.mjs` 28 → **32** assertions; `verify-installed` reports PASS with `via=user-system-reminder`; the recomputed `agent-probe-v2.json` shows **7/10** probes with `containsLangRuleRequestTail: true` and 16 runtime-context events.
 - Injection behavior is identical to 2.0.0 (`index.js` unchanged, same sha256).
 
-## [2.0.0] — 2026-11-19
+### 开发期快照 2.0.0 — 2026-11-19（未对外发布）
 
 ### Added / 新增
 
@@ -271,7 +330,7 @@ All notable changes to this project are documented here, in the spirit of Keep a
 - Install steps are unchanged from v1: `dsh plugin --profile <your-profile> add github:ArthurZhu1992/dsh-lang-rule`, then restart DSH.
 - `engines.node >= 22.15` (the auditor uses `zlib.zstdDecompressSync`), `engines.dsh >= 0.2.0`.
 
-## [1.0.0] — 2026-11-19
+### 开发期首版 v1 快照（未对外发布）
 
 ### Added
 
@@ -282,3 +341,4 @@ All notable changes to this project are documented here, in the spirit of Keep a
 - Head rule anchor (`lang-rule` @ `-900`) and tail first-sentence anchor (`lang-rule:tail` @ `90050`).
 - `tools/lang-audit.mjs`, a read-only corpus auditor.
 - Bilingual README, `locale/en.json` and `locale/zh.json`, MIT LICENSE, `icon.svg`.
+

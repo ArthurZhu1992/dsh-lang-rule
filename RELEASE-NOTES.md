@@ -1,5 +1,7 @@
 # Release Notes — dsh-lang-rule
 
+> **对外版本只看 1.0.0。** 本文件是开发期快照记录（2.x / 3.x），从未对外发布；对应 tag 与 Release 已删除归档，旧 commit 仍在 git 历史中。1.0.0 的完整变更见 [CHANGELOG.md](./CHANGELOG.md)，版本规则见 [VERSIONING.md](./VERSIONING.md)。
+
 ## 3.1.3 — 2026-11-19
 
 ### 修复：工具结果变体被同 step 消费（t38 F1）
