@@ -9,13 +9,13 @@
 ### Changed / 变更
 
 - README 首屏改版为「起笔即中文」定位：首屏直接给出三条可验证承诺（首句决定整段语言、覆盖全部 agent 角色、`verify-installed --strict` 一条命令自查），不再以版本号叙事开场。
-- 市场文案定稿（常滑回英文 / 一线到底 / 开销三档）：`默认跑英文` 改为 `常滑回英文`（描述模型行为倾向而非配置默认，与实测一致）；五个作用域列举收为 `一线到底`（在 README 中展开）；`成本三档` 改为 `开销三档`（与「一线到底」对仗，不作文价目表读法）。
+- 对外文案定稿（起笔即中文 / 一线到底 / 说得出就查得到）：市场条目与 README 首屏统一到这一主轴，作用域与可验证性在同一段里说清。
 - CHANGELOG 中一处完整会话 UUID 缩为 8 位前缀（`03d5a353`），与其余引用保持一致，避免把完整会话标识写进发布文档。
 
 ### English
 
 - README hero rewritten around "the first line lands in Chinese": three verifiable promises up front (first sentence decides the trace, every agent role covered, one-command self-check), with no version-number narrative.
-- Market copy finalized: "keeps slipping back into English" (model behaviour, not a config default), "all the way down" (scopes expanded in README), and "three cost tiers" (reads as a paired phrase, not a price list).
+- Public copy finalized around "the first line lands in Chinese / all the way down / what it claims, you can verify"; the market entry and README hero now share one message.
 - One full session UUID in this file was shortened to its 8-character prefix (`03d5a353`) for consistency.
 
 ## [1.0.0] — 2026-11-19
