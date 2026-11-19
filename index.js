@@ -229,16 +229,18 @@ export function createRequestVariantProvider(mode = 'step', variants = REQUEST_V
 export const TOOL_RESULT_VARIANT_INDEX = 2;
 
 /**
- * step 感知的变体 provider（v3.1.1 修复 lazy 成本）。
+ * step 感知的变体 provider（v3.1.1 修复 lazy 成本；v3.1.3 修复工具结果作用域）。
  *
  * 计数单位是 **step**，不是 provider 调用次数：
  *   - 优先：宿主事件驱动（apply 里监听 `session/event` 的 `step/start` 与 `tool/result`）；
  *   - 退路：时间窗启发式 —— 同一 signal 且距上次调用 < sameStepWindowMs 视为同一 step。
- *     （宿主一次 step 内的多次 assembly 调用通常紧邻；跨 step 之间隔着一次模型请求。）
  *
  * lazy 的切换规则：`floor(step / 3) % variants.length` → 第 1/4/7/10 个 step 切换。
- * 工具结果后立即切换：`noteToolResult()` 之后的**下一个 step** 强制返回「工具结果之后」变体，
- * 不等 3 步轮换（覆盖 mid：工具结果紧贴采样点）。
+ *
+ * 工具结果优先（v3.1.3 修正）：`noteToolResult()` 之后，**整个下一个 step 的所有调用**都返回
+ * 「工具结果之后」变体，直到该 step 结束再恢复轮换。旧实现只覆盖「下一次调用」——若该 step
+ * 在 tool/result 后还有 `refreshContext()` 调用，会把变体在同一步消费掉，下一个 step 已恢复轮换
+ * （t37 实测命中率仅 1/3，mid「读一个文件→同一步总结」恰是最需要它的形态）。
  *
  * @param {{mode?: 'lazy'|'step', variants?: readonly string[], now?: () => number, sameStepWindowMs?: number}} [options]
  */
@@ -253,23 +255,40 @@ export function createStepAwareVariantProvider(options = {}) {
   let externalSteps = false;
   let lastCallAt = null;
   let lastSignal = null;
-  let pendingToolResult = false;
+  /** 已观察到 tool/result，等待下一个 step 开始时激活工具变体。 */
+  let pendingToolStep = false;
+  /** 当前 step 整段使用工具变体（直到下一个 step 开始）。 */
+  let toolStepActive = false;
+
+  /** 进入一个新 step：结束上一 step 的工具变体、激活待处理的工具变体、推进 step 计数。 */
+  const beginStep = () => {
+    if (toolStepActive) toolStepActive = false;
+    if (pendingToolStep) {
+      pendingToolStep = false;
+      toolStepActive = true;
+    }
+    stepIndex += 1;
+    lastCallAt = null;
+    lastSignal = null;
+  };
 
   return {
     /** 宿主事件：新 step 开始。调用后 text() 不再自行推进 step。 */
     noteStepStart() {
       externalSteps = true;
-      stepIndex += 1;
-      lastCallAt = null;
-      lastSignal = null;
+      beginStep();
     },
-    /** 宿主事件：本 step 观察到工具结果 → 下一个 step 用「工具结果之后」变体。 */
+    /** 宿主事件：本 step 观察到工具结果 → 下一个 step 整段使用「工具结果之后」变体。 */
     noteToolResult() {
-      pendingToolResult = true;
+      pendingToolStep = true;
     },
     /** 当前 step 序号（0-based，-1 表示尚未开始）；供 selftest/测量脚本读取。 */
     get step() {
       return stepIndex;
+    },
+    /** 当前 step 是否处于「工具结果之后」状态。 */
+    get toolStep() {
+      return toolStepActive;
     },
     /** provider 本体：宿主每次 assembly 调用一次。 */
     text(context) {
@@ -277,14 +296,12 @@ export function createStepAwareVariantProvider(options = {}) {
       const signal = context?.signal ?? null;
       if (!externalSteps) {
         const sameStep = lastCallAt !== null && at - lastCallAt < sameStepWindowMs && signal === lastSignal;
-        if (!sameStep) stepIndex += 1;
+        if (!sameStep) beginStep();
       }
       lastCallAt = at;
       lastSignal = signal;
-      if (pendingToolResult) {
-        pendingToolResult = false;
-        return toolVariant;
-      }
+      // 工具结果之后的整个 step 都用工具变体（不再只消费一次）。
+      if (toolStepActive) return toolVariant;
       if (mode === 'step') return variants[Math.max(stepIndex, 0) % variants.length];
       const index = Math.floor(Math.max(stepIndex, 0) / 3) % variants.length;
       return variants[index];

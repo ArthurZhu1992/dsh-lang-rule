@@ -631,6 +631,64 @@ test('v3.1.2 step 模式也接工具结果优先（t33 F1）', () => {
   assertEqual(tracker.text({}), REQUEST_VARIANTS[2], '恢复每 step 轮换：step 2 → variants[2]');
 });
 
+test('v3.1.3 工具结果变体覆盖整个下一个 step（t38 F1）', () => {
+  let clock = 0;
+  const tracker = createStepAwareVariantProvider({ mode: 'lazy', now: () => clock });
+  tracker.noteStepStart(); // step 0
+  assertEqual(tracker.text({}), REQUEST_VARIANTS[0]);
+  tracker.noteStepStart(); // step 1
+  assertEqual(tracker.text({}), REQUEST_VARIANTS[0]);
+  tracker.noteToolResult(); // step 1 内观察到工具结果
+  // 关键回归：同 step 内 tool/result 之后仍有 refreshContext 调用 —— 不得在同一步消费掉工具变体。
+  const sameStepAfter = tracker.text({});
+  assertEqual(REQUEST_VARIANTS.indexOf(sameStepAfter), 0, '同 step 的后续调用应保持正常变体，不消费工具变体');
+  tracker.noteStepStart(); // step 2 —— 整段工具变体
+  for (let call = 0; call < 3; call += 1) {
+    assertEqual(
+      tracker.text({}),
+      REQUEST_VARIANTS[TOOL_RESULT_VARIANT_INDEX],
+      `工具结果后的 step 2 第 ${call + 1} 次调用都必须是「工具结果之后」变体`,
+    );
+  }
+  tracker.noteStepStart(); // step 3 —— 恢复轮换
+  assertEqual(tracker.text({}), REQUEST_VARIANTS[1], 'step 3 恢复正常轮换（floor(3/3)=1）');
+});
+
+test('v3.1.3 时间窗模式：工具结果同 step 不消费，跨 step 整段生效', () => {
+  let clock = 0;
+  const tracker = createStepAwareVariantProvider({ mode: 'lazy', now: () => clock });
+  const signal = {};
+  clock += 10;
+  tracker.text({ signal }); // step 0
+  clock += 10;
+  tracker.text({ signal }); // step 0 第二次
+  tracker.noteToolResult();
+  clock += 10;
+  const sameStep = tracker.text({ signal }); // 同 step：不消费
+  assertEqual(REQUEST_VARIANTS.indexOf(sameStep), 0, '时间窗模式下同 step 也不应消费工具变体');
+  clock += 2000;
+  const nextFirst = tracker.text({ signal }); // 新 step
+  clock += 10;
+  const nextSecond = tracker.text({ signal });
+  assertEqual(nextFirst, REQUEST_VARIANTS[TOOL_RESULT_VARIANT_INDEX], '新 step 首调用应是工具变体');
+  assertEqual(nextSecond, REQUEST_VARIANTS[TOOL_RESULT_VARIANT_INDEX], '新 step 第二次调用仍是工具变体');
+});
+
+test('v3.1.3 step 与 lazy 两态在工具结果后的行为一致', () => {
+  for (const mode of ['lazy', 'step']) {
+    const tracker = createStepAwareVariantProvider({ mode, now: () => 0 });
+    tracker.noteStepStart();
+    tracker.text({});
+    tracker.noteToolResult();
+    tracker.noteStepStart();
+    const first = tracker.text({});
+    const second = tracker.text({});
+    assertEqual(first, REQUEST_VARIANTS[TOOL_RESULT_VARIANT_INDEX], `${mode} 下一 step 首调用`);
+    assertEqual(second, REQUEST_VARIANTS[TOOL_RESULT_VARIANT_INDEX], `${mode} 下一 step 第二次调用`);
+    assertEqual(tracker.toolStep, true, `${mode} 的 toolStep 状态应为 true`);
+  }
+});
+
 test('v3.1.1 lazy 按 agent 隔离：两个会话的 step 互不影响', () => {
   const registry = makeRegistry();
   let clock = 0;

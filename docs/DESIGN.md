@@ -204,7 +204,8 @@ v3.0.0 的 `step` 变体在长任务里每步重发一条约 137 字符（点估
 - 计数单位改为 step：优先监听 `session/event` 的 `step/start`；事件不可用时退回「同一 signal + 距上次调用 <1500ms 视为同一 step」的时间窗启发式；
 - `tool/result` 之后的下一个 step 强制使用「工具结果之后」变体（不等轮换），覆盖 mid 场景（只读 1–2 个文件、2–3 段）；
 - **v3.1.2**：`step` 模式与 `lazy` 共用同一 tracker（仅 `mode` 不同），因此 `step` 也接工具结果优先；`step` 的语义明确为「每 step 切换」（同一 step 内多次调用保持同变体），两态行为一致；
-- 复测工具 `tools/measure-appends.mjs`：20 step × 2 次调用模拟为 off 0.05 / lazy 0.35 / step 1.00（0.35 是模拟值，真实值待部署后复测）。
+- **v3.1.3 工具结果作用域**：旧实现只让「下一次 provider 调用」返回变体 3，若该 step 在 tool/result 后还有 `refreshContext()` 调用，变体会在同一步被消费（t37 实测命中率 1/3，mid 形态最需要它时失效）。现在用 `pendingToolStep → toolStepActive` 两态：`tool/result` 后的**整个下一个 step** 都用变体 3，直到该 step 结束（`beginStep()` 清除）再恢复轮换。重放验证：真实会话 `session-2a6b3aee` 的 10 个 tool/result 场景 10/10 命中（旧实现实测 1/3）。
+- 复测工具：`tools/measure-appends.mjs`（append/step：22 step 模拟 off 0.05 / lazy 0.35 / step 1.00；实测 lazy 0.479 多步会话）与 `tools/measure-tool-variant.mjs`（工具结果命中率：模拟 3/3、旧实现 1/3、重放 10/10）。
 
 ### 10.4 预算口径与断言
 

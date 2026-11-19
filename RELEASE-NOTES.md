@@ -1,5 +1,22 @@
 # Release Notes — dsh-lang-rule
 
+## 3.1.3 — 2026-11-19
+
+### 修复：工具结果变体被同 step 消费（t38 F1）
+
+- 旧行为：`tool/result` 后的「下一次 provider 调用」返回变体 3（工具结果之后）。若该 step 在工具结果后还有 `refreshContext()` 调用，变体会在同一步被消费掉，下一个 step 已恢复轮换 —— t37 实测 long 会话命中率仅 **1/3**（`session-2a6b3aee` 3 个 tool/result 后分别是变体 1/2/0），而 mid 形态（读一个文件 → 同一步总结）恰恰最需要它。
+- 新行为：`tool/result` 后**整个下一个 step 的所有调用**都返回变体 3，直到该 step 结束再恢复轮换（`pendingToolStep` → `toolStepActive` 两态，由 `beginStep()` 推进/清除）。lazy 与 step 两态一致。
+- 新增 `tools/measure-tool-variant.mjs`：机制模拟（3/3 命中）、旧实现实测（真实会话 1/3）、`--replay` 用真实 step 序列 + 当前实现重放（`session-2a6b3aee` 10/10）。结果落盘 `out/tool-variant.json`。
+
+### 文档：成本按实测校准（t38 F2）+ `now` 钩子说明（t38 F3）
+
+- README 成本表 lazy 的 append/step 改为 **实测 0.479**（t37 多步会话，`V3.1.2-VERIFY.json#append.appendPerStepMultiStep`），并保留两条历史并说明差异：0.783（3.1.0 实测，按调用计数放大）、0.35（20 step × 2 调用模拟）、0.479（真实宿主调用节奏）；总体 0.606、单条 1 步会话 0.5 样本过小不作结论。
+- README 工具段补 `settings.now` 假时钟钩子的用途与缺失影响（消除 3.1.2 的 static 1 WARN）：生产不设置，harness 用它构造确定性跨 step 序列。
+
+### 不变
+
+- 判据文本、五通道 order（-900/-880/5100/90050/500）、三档预算（125/181/337）均未改；零内部 import。
+
 ## 3.1.2 — 2026-11-19
 
 ### 修复：`step` 模式也接工具结果优先（t33 F1）

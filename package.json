@@ -1,7 +1,7 @@
 {
   "name": "dsh-lang-rule",
-  "version": "3.1.2",
-  "description": "Deployment-level language policy v3.1.2: judgment-shaped first-sentence rule (Chinese character required, no ASCII first letter), Chinese few-shot, step-aware per-request context with tool-result priority, dual metrics, and three token presets, for every dsh agent including subagents.",
+  "version": "3.1.3",
+  "description": "Deployment-level language policy v3.1.3: judgment-shaped first-sentence rule (Chinese character required, no ASCII first letter), Chinese few-shot, step-aware per-request context whose tool-result variant covers the whole next step, dual metrics, and three token presets, for every dsh agent including subagents.",
   "type": "module",
   "main": "index.js",
   "exports": {
@@ -33,7 +33,8 @@
     "test": "node tools/selftest.mjs && node --test tools/selftest.test.mjs",
     "verify": "node tools/verify-installed.mjs",
     "audit": "node tools/lang-audit.mjs",
-    "measure": "node tools/measure-appends.mjs"
+    "measure": "node tools/measure-appends.mjs",
+    "measure-tool": "node tools/measure-tool-variant.mjs --simulate"
   },
   "keywords": [
     "dsh",

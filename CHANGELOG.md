@@ -3,6 +3,46 @@
 本文件记录 dsh-lang-rule 的重要变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 All notable changes to this project are documented here, in the spirit of Keep a Changelog and Semantic Versioning. Each entry is written once in Chinese and once in English.
 
+## [3.1.3] — 2026-11-19
+
+> 修复轮次记录：t37 实测发现「工具结果之后」变体命中率仅 1/3 → t38 修复（版本保持 3.1.3，不跳号）→ t39 审查 pass。**注入判据、五通道 order（`-900` / `-880` / `5100` / `90050` / `500`）与三档预算（125 / 181 / 337）均未变。**
+
+### Fixed / 修复
+
+- **工具结果变体的作用域提升到整个下一个 step**：旧实现只让「下一次 provider 调用」返回「工具结果之后」变体，若该 step 在 `tool/result` 之后还有 `refreshContext` 调用，变体在同一步被消费掉，下一个 step 已恢复轮换——t37 实测 long 会话命中率只有 **1/3**。现改为 `pendingToolStep → toolStepActive` 两态：`beginStep()` 在下一个 step 开始时激活，该 step 内所有 provider 调用都返回「工具结果之后」变体，直到再下一个 step 才清除；`lazy` 与 `step` 两态一致，`off` 不受影响。真实会话 `2a6b3aee` 重放 **10/10** 命中（对照旧实现 1/3），`6b2fa958`（1652 step）全 HIT。
+- **`settings.now` 假时钟已文档化**：`apply(ctx, { now: () => clock })` 供 selftest/harness 构造确定性跨 step 序列，生产不设置；缺失时 static 层把时间窗行为记为「不可确定性验证」。3.1.2 的 static 层 1 条 WARN 由此消除（现 42 PASS / 0 FAIL / 0 WARN）。
+- **复现说明**：`2a6b3aee` 的证据在隔离 DSH_HOME（`work/lang-rule-tests/.runtime/dsh-home/sessions`）；在默认 `~/.dsh/sessions` 下 `--replay --session 2a6b3aee` 会「未找到」。README 测量小节与脚本 usage 都写明必须带 `--sessions-root <path>`（或 `DSH_SESSIONS_ROOT`），并给出完整示例命令。
+
+- **Tool-result variant now covers the whole next step**: previously only the next provider call returned the "after tool results" variant, which the same step's `refreshContext` consumed (t37 measured 1/3 hit rate). `pendingToolStep → toolStepActive` keeps the variant for every call in the following step, for both `lazy` and `step`; `off` is unaffected. Replay on real session `2a6b3aee`: **10/10**, versus 1/3 before.
+- **`settings.now` test hook documented**; the static layer's single WARN from 3.1.2 is gone (42 PASS / 0 FAIL / 0 WARN).
+- **Reproduction note**: `2a6b3aee` lives in the isolated DSH_HOME; pass `--sessions-root work/lang-rule-tests/.runtime/dsh-home/sessions` (or `DSH_SESSIONS_ROOT`), otherwise replay reports "not found".
+
+### Cost table / 成本表（三条并列，来源不同）
+
+| 数值 | 来源 | 含义 |
+| --- | --- | --- |
+| **0.35** | `measure-appends --dry-run` 的 20 step × 2 次调用**模拟** | 理想节奏下的下界 |
+| **0.783** | 3.1.0 实测（t24 long 组） | 按 provider 调用次数计数，宿主一 step 多次调用把 lazy 放大 |
+| **0.479** | **3.1.2 实测**（t37 多步会话，`out/V3.1.2-VERIFY.json#append.appendPerStepMultiStep`） | 真实宿主调用节奏下的当前基线 |
+
+- **限定**：0.479 是 **3.1.2 的实测基线，不是 3.1.3 的定值**。3.1.3 把工具结果变体扩到整个下一个 step（命中率 1/3 → 3/3），理论上会让 lazy 成本略有抬高；部署 3.1.3 后需复跑 `node tools/measure-appends.mjs` 更新本表。总体（含 1 步短会话）为 0.606；单条 1 步会话（`03d5a353`）为 0.5，样本过小不作结论。
+
+- **0.35** is a 20-step simulation (lower bound), **0.783** was the 3.1.0 measurement (inflated by counting provider calls), and **0.479** is the **3.1.2** multi-step baseline. 0.479 is not 3.1.3's number: widening the tool-result variant slightly raises lazy cost, so re-run `measure-appends` after deploying 3.1.3.
+
+### Not claimed / 不声称
+
+- **不声称达标**：t37 的 mid 组 20%（n=5）样本量不足以证明改善；3.1.3 的机制修复目标是「让命中率与成本可解释」，不是「已把首句英文压到 5% 以下」。
+- 历史结论仍然有效：t24 的 10.7%（n=75）是 lazy 近似 step（0.783）条件下的成绩，不能当作 3.1.3 的成绩。
+
+- **No success claim**: t37's mid group at 20% (n=5) is too small to demonstrate improvement; 3.1.3 makes hit rate and cost explainable, not "first-sentence English below 5%".
+- t24's 10.7% (n=75) was measured under near-step lazy behavior and is not 3.1.3's result.
+
+### Compatibility / 兼容性
+
+- `contextVariant` 三态与旧布尔映射不变；三档 preset 预算未变；v1 / v2 配置键继续有效。
+
+- The three `contextVariant` modes, legacy boolean mapping, and preset budgets are unchanged; v1 / v2 config keys keep working.
+
 ## [3.1.2] — 2026-11-19
 
 > 合并 3.1.1 与 3.1.2 的修复发布（3.1.1 未单独打 tag）。**注入判据、五通道 order（`-900` / `-880` / `5100` / `90050` / `500`）与三档预算均未变。**

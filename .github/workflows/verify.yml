@@ -54,6 +54,9 @@ jobs:
       - name: measure-appends (dry-run, variant accounting regression)
         run: node tools/measure-appends.mjs --dry-run --json --out "$RUNNER_TEMP/appends.json"
 
+      - name: measure-tool-variant (simulate, tool-result scope regression)
+        run: node tools/measure-tool-variant.mjs --simulate --json --out "$RUNNER_TEMP/tool-variant.json"
+
       - name: Package manifest sanity
         run: |
           set -euo pipefail
