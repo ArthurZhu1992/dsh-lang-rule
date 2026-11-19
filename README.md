@@ -5,8 +5,10 @@
 > v3 的核心变化：**把首句从「靠黑名单堵」变成「可判定」**。判据改成「第一句必须包含中文字符、不得以 ASCII 字母开头」，配 2 个中文 few-shot，并让 per-request 约束文本随 step 轮换（对抗长任务稀释）。黑名单降级为辅助提示——**枚举永远不完备**。
 >
 > v3.1 加入 **token 预算**：三档 preset（minimal / standard / full）+ 变体策略三态（`off` / `lazy` / `step`，默认 `lazy`），把「用 token 换约束强度」的 trade-off 显式化并可关。成本表见 [token 成本](#token-成本v31)。
+>
+> **v3.1.1 / 3.1.2 修复**：`lazy` 的切换计数单位从「provider 调用次数」改为 **step**（宿主一 step 会多次调用 provider，按调用计数会被放大）；`lazy` 与 `step` 都在工具结果后的下一个 step 立即切「工具结果之后」变体（覆盖 mid 场景），两态行为一致。见[为什么 lazy 曾经没兑现](#为什么-lazy-曾经没兑现v311-修复)。
 
-- 版本：`3.1.0`（v1 = `1.0.0`，v2 = `2.0.0/2.0.1`，v3.0.0 → 3.1.0 增加 preset 与变体降频；五通道 order 与 v2 完全一致，配置向后兼容）
+- 版本：`3.1.2`（v1 = `1.0.0`，v2 = `2.0.0/2.0.1`，v3.0.0 → 3.1.2 增加 preset 与变体降频，并修复 lazy 的 step 计数与 step 模式的工具结果切换）
 - 运行要求：dsh ≥ 0.2.0；不 import 任何 dsh/cordis 内部模块，服务缺失即静默降级
 - 零网络、零写入：插件只注册提示词贡献，工具只读会话文件
 
@@ -126,13 +128,37 @@ const CONTEXT_ORDERS = { WORKING_DIRECTORY: 100, SANDBOX_POLICY: 110, APPROVAL_P
 
 宿主对 runtime-context 快照的去重单位是**整包 sections**：文本不变 → 不重复 append；文本变 → 整包重发。所以「多久变一次」直接决定长任务成本：
 
-| `contextVariant` | 行为 | 20 step 的 context append 次数 | 20 step 增量（full，点估 86/次） |
-| --- | --- | --- | --- |
-| `off`（= v2 行为） | 固定文本，只 append 一次 | 1 | ≈86 token |
-| `lazy`（**默认**） | 每 3 次 assembly 切换：第 1/4/7/10… 次 | ⌈20/3⌉ = 7 | ≈602 token |
-| `step`（v3.0.0 行为） | 每次 assembly 都切换 | 20 | ≈1720 token |
+| `contextVariant` | 行为 | 20 step 的 context append 次数 | 20 step 增量（full，点估 86/次） | append/step |
+| --- | --- | --- | --- | --- |
+| `off`（= v2 行为） | 固定文本，只 append 一次 | 1 | ≈86 token | 0.05 |
+| `lazy`（**默认**） | 每 3 个 **step** 切换（第 1/4/7/10… 步）+ 工具结果后立即切「工具结果之后」 | 7（+每次工具结果 1 次） | ≈602 token | **0.35（20 step 模拟）**；真实样本 1 条为 0.5，部署后批量复测 |
+| `step` | 每 step 切换 | 20 | ≈1720 token | 1.00 |
 
-对比：v2 固定文本 86 → v3 `lazy` 602 → v3 `step` 1720（都是 20 step、full 档、context 点估口径）。`lazy` 把 v3.0.0 的 20 倍成本压到约 7 倍，同时保留「工具结果之后仍然要中文」的变体。`minimal + lazy` 的 20 step 增量约 602 token（context 文本同为 86），`standard + lazy` 约 238 token（context 34/次）。
+> 标签说明：`0.35` 来自 `measure-appends --dry-run` 的 20 step × 2 次调用**模拟**，不是真实会话实测；当前真实样本只有 `03d5a353` 一条（v2 固定文本期），append/step = 0.5。真实 lazy 值需 v3.1.1 装进 profile 后用新会话复测（`node tools/measure-appends.mjs`）。修复前 t24 的 long 组实测为 0.783。
+
+### 为什么 lazy 曾经没兑现（v3.1.1 修复）
+
+t24 批量实测（`work/lang-rule-tests/out/request-appends.json`）long 组 **append/step = 0.783**（13.1 step / 10.3 次 append），而不是设计的 0.33。原因：
+
+> **宿主在一个 step 内可能多次调用 context provider** —— `preStep()` 里的 `systemPrompt.assemble()`、step 内的 `refreshContext()`、以及失败重试，都会触发 provider。v3.1 按「provider 调用次数」计数，于是「每 3 次调用切换」实际变成「每 1–2 个 step 就切换」，成本节省没有兑现。
+
+v3.1.1 的修复：
+
+1. **按 step 计数**：优先监听宿主 `session/event` 的 `step/start` 精确推进 step；事件不可用（`ctx.on` 缺失、签名不符、或全局收不到 agent 事件）时，退回「同一 signal + 距上次调用 <1500ms 视为同一 step」的时间窗启发式。
+2. **工具结果后立即切换**：`tool/result` 之后的**下一个 step** 强制使用「工具结果之后」变体，不等 3 步轮换。这直接覆盖 mid 场景（只读 1–2 个文件、2–3 段，工具结果紧贴采样点）。
+
+实测/复现：
+
+```bash
+node tools/measure-appends.mjs                 # 读最近会话：step 数、append 次数、append/step
+node tools/measure-appends.mjs --session 03d5a353
+node tools/measure-appends.mjs --dry-run       # 不读会话，只跑 20 step × 2 次调用的机制模拟
+# 结果落盘 out/appends.json，含 observed / simulated / theory 三段
+```
+
+> 路径约定：本脚本默认输出 `work/dsh-lang-rule/out/appends.json`；harness 侧的批量数据在 `work/lang-rule-tests/out/request-appends.json`（v3.1.0 旧口径，由测试架构师产出）。两者可用 `--out <path>` 对齐，内容字段一致。
+
+`--dry-run` 模拟（20 step × 2 次 provider 调用）：`off 1 次 / 0.05`、`lazy 7 次 / 0.35`、`step 20 次 / 1.00`；修复前 t24 实测 long 组为 `0.783`。修复后 lazy 的理论值为 `0.33–0.5`（工具结果越密越高），显著低于修复前的 0.783。**注意 0.35 是模拟值**，真实值以部署后新会话的 `measured` 输出为准。
 
 选型建议：
 
@@ -168,7 +194,7 @@ const CONTEXT_ORDERS = { WORKING_DIRECTORY: 100, SANDBOX_POLICY: 110, APPROVAL_P
 | `requestTail` | `'context'` | per-request 通道：`'context'` 启用；**`'off'` 或 `false` 完全回到 v1 纯 section 行为**（回归对比用） |
 | `requestEnabled` | `true` | 与 `requestTail` 等价的布尔开关 |
 | `requestText` | 内置 | per-request 约束正文（显式设置后覆盖变体，回到固定文本） |
-| `contextVariant` | `'lazy'` | **v3.1**：`'off'`（固定文本，只 append 一次，等同 v2 成本）/ `'lazy'`（默认，每 3 次 assembly 切换，约 1/3 成本）/ `'step'`（每次切换，v3.0.0 行为）。旧布尔兼容：`false`→`off`、`true`→`step` |
+| `contextVariant` | `'lazy'` | **v3.1**：`'off'`（固定文本，只 append 一次，等同 v2 成本）/ `'lazy'`（默认，每 3 个 **step** 切换，约 1/3 成本）/ `'step'`（每 step 切换）。两者都接「工具结果后立即切换」。旧布尔兼容：`false`→`off`、`true`→`step` |
 | `requestOrder` | `max(500, 宿主 context 上界+100)` | per-request context order |
 | `requestSectionName` | `lang-rule:request-tail` | per-request context 名 |
 
@@ -277,38 +303,6 @@ node tools/lang-audit.mjs --limit 200 --verbose
 
 ---
 
-## 如何验证 v3 是否在你机器上生效
-
-三步，全部只读：
-
-1. **装的是不是 v3**：
-
-   ```bash
-   node -e "console.log(require('./package.json').version)"   # 期望 3.1.0
-   node tools/verify-installed.mjs --strict                   # 期望 PASS；FAIL 退出码 1
-   ```
-
-   看 `per-request 约束出现在会话里` 一项：`PASS` 且 detail 含 `via=user-system-reminder`（或兼容形态）说明 per-request 通道确实注入；`--plugin=.` 指向未安装副本时不判 FAIL。
-
-2. **注入文本是不是 v3 判据**：
-
-   - 最近会话的 `system/message` 应含「第一句必须包含中文字符」与「不得以 ASCII 字母开头」；
-   - `user/message` 的 `data.source.sections[]` 应含 `name='lang-rule:request-tail'`，text 随 assembly 轮换（默认 `lazy` 每 3 次切换；`contextVariant: false` 时固定）。
-
-3. **行为指标（可选）**：
-
-   ```bash
-   node tools/lang-audit.mjs --json --limit 50
-   ```
-
-   `summary.byAnchorLayer` 的 `head+tail+request` 层是实际生效层；`summary.firstSentenceVsBody` 是首句语言 × 整段 CJK 的交叉表；`summary.longTasks` 是 long/short 分组。注意单机语料不足以检验「首句英文 <5%」，需要 n≥60 的分层 probe。
-
-## How to verify v3 is active on your machine
-
-1. `node tools/verify-installed.mjs --strict` → PASS, with `via=user-system-reminder` in the per-request item.
-2. Inspect the latest session: `system/message` contains "第一句必须包含中文字符" and "不得以 ASCII 字母开头"; `user/message` carries `data.source.sections[]` with `name='lang-rule:request-tail'`.
-3. Optionally `node tools/lang-audit.mjs --json --limit 50` and read `summary.byAnchorLayer` (`head+tail+request`), `summary.firstSentenceVsBody`, and `summary.longTasks`. A single machine's corpus cannot test the <5% target; that needs n≥60 stratified probes.
-
 ## 与 58fly/dsh-language-guard 的差异
 
 竞品里综合评分最高的 58fly/dsh-language-guard（40/45）用的是「工具文档之后重申一段约 146 字符约束（order 5100）+ 周期性提醒」，其 README 自认 **Subagents are skipped**（子会话只继承系统提示、周期提醒不覆盖）。v3 与之的差异：
@@ -344,7 +338,9 @@ plugin_manager { action: "install_bundle", target: "dsh-lang-rule" }
 
 - **黑名单永远不完备**：`Let me / Let's / I'll / We need to / The user wants / The task:` 之外仍可能出现新的英文起手（v3 已把黑名单降级为辅助提示，主判据是「第一句必须含中文字符、不得以 ASCII 字母开头」）。新增起手形态应先进 `ENGLISH_OPENER_HINTS` 的候选观察，而不是当成唯一防线。
 - **首句中文 ≠ 整段中文**：实测 63,443 字符 / 21 段的任务首句中文但整段 CJK 0.222；v3 用 step 级变体缓解稀释，但不保证整段中文占比达 90%+。
-- **step 变体的成本**：v3 请求尾文本 **≤150 字符**（较 v2 的 ≤80 增加，多出的是可判定判据句与 few-shot），且按 assembly 每 step 重发一条短快照（73–137 字符）；长任务多步时累计有 token 成本，需要省 token 可设 `contextVariant: false` 回到固定文本。
+- **step 变体的成本**：v3 请求尾文本 **≤150 字符**（较 v2 的 ≤80 增加，多出的是可判定判据句与 few-shot）。`lazy`/`step` 都会按 step 重发短快照（73–137 字符）；`lazy` 约每 3 step 一次（模拟 0.35 append/step），`step` 每步一次（1.00）。长任务多步时累计有 token 成本，需要省 token 可设 `contextVariant: off` 回到固定文本。
+- **lazy 的 step 计数依赖事件或时间窗**：优先用宿主 `session/event` 的 `step/start`；若事件不可用（`ctx.on` 缺失或全局收不到 agent 事件），退回「同一 signal + 间隔 <1500ms 视为同一 step」。若宿主某 step 内的多次 provider 调用间隔超过 1500ms 且事件不可用，step 会被多计、`lazy` 会偏密；用 `tools/measure-appends.mjs` 复测即可发现。
+- **成本表里的 0.35 是模拟值**：来自 `measure-appends --dry-run` 的 20 step × 2 次调用模拟；真实样本当前仅 `03d5a353` 一条（append/step 0.5，v2 固定文本期）。v3.1.2 进 profile 后需用新会话批量复测（`node tools/measure-appends.mjs`，非 dry-run），复测后更新成本表。
 - per-request 通道依赖宿主把 runtime context 快照 append 在 claimed 消息之后（dsh 0.2.2-rc.3 行为）。宿主若改动该投影顺序，约束的「最靠后」性质会退化；用 `tools/verify-installed.mjs`、`tools/lang-audit.mjs` 复测 `head+tail+request` 层即可发现。
 - AgentTeams 英文分派模板本身不在本插件范围内（不能改 AgentTeams），插件只能在提示词侧抵消。
 - 插件不保证 100% 中文：它把「首句英文率」和「整段英文主导率」压到尽可能低，量化验收由外部 harness 用 `lang-audit --json` 的 `summary.byAnchorLayer` / `summary.longTasks` 完成。

@@ -197,7 +197,14 @@ node tools/lang-audit.mjs --json
 
 ### 10.3 为什么默认 `lazy` 而不是 `step`
 
-v3.0.0 的 `step` 变体在长任务里每步重发一条约 137 字符（点估 86 token）的快照：20 step ≈ 1720 token，且随步数线性增长。`lazy` 把切换点放到第 1/4/7/10… 次 assembly（20 step 约 7 次 ≈ 602 token），仍保留「工具结果之后仍然要中文」的变体语义；`off` 则完全回到 v2 的一次 append。
+v3.0.0 的 `step` 变体在长任务里每步重发一条约 137 字符（点估 86 token）的快照：20 step ≈ 1720 token，且随步数线性增长。`lazy` 把切换点放到第 1/4/7/10… 个 **step**（20 step 约 7 次 ≈ 602 token），仍保留「工具结果之后仍然要中文」的变体语义；`off` 则完全回到 v2 的一次 append。
+
+**v3.1.1 修复（为什么 v3.1 的 lazy 没兑现）**：v3.1 按「provider 调用次数」计数，但宿主在一个 step 内可能多次调用 provider（`preStep()` 的 `assemble()`、step 内的 `refreshContext()`、失败重试），于是「每 3 次调用切换」实际变成「每 1–2 个 step 切换」——t24 实测 long 组 `append/step = 0.783`。修复后：
+
+- 计数单位改为 step：优先监听 `session/event` 的 `step/start`；事件不可用时退回「同一 signal + 距上次调用 <1500ms 视为同一 step」的时间窗启发式；
+- `tool/result` 之后的下一个 step 强制使用「工具结果之后」变体（不等轮换），覆盖 mid 场景（只读 1–2 个文件、2–3 段）；
+- **v3.1.2**：`step` 模式与 `lazy` 共用同一 tracker（仅 `mode` 不同），因此 `step` 也接工具结果优先；`step` 的语义明确为「每 step 切换」（同一 step 内多次调用保持同变体），两态行为一致；
+- 复测工具 `tools/measure-appends.mjs`：20 step × 2 次调用模拟为 off 0.05 / lazy 0.35 / step 1.00（0.35 是模拟值，真实值待部署后复测）。
 
 ### 10.4 预算口径与断言
 

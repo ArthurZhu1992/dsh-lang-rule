@@ -51,6 +51,9 @@ jobs:
       - name: verify-installed (plugin copy)
         run: node tools/verify-installed.mjs --plugin=. --json
 
+      - name: measure-appends (dry-run, variant accounting regression)
+        run: node tools/measure-appends.mjs --dry-run --json --out "$RUNNER_TEMP/appends.json"
+
       - name: Package manifest sanity
         run: |
           set -euo pipefail

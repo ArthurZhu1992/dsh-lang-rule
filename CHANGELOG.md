@@ -3,6 +3,45 @@
 本文件记录 dsh-lang-rule 的重要变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 All notable changes to this project are documented here, in the spirit of Keep a Changelog and Semantic Versioning. Each entry is written once in Chinese and once in English.
 
+## [3.1.2] — 2026-11-19
+
+> 合并 3.1.1 与 3.1.2 的修复发布（3.1.1 未单独打 tag）。**注入判据、五通道 order（`-900` / `-880` / `5100` / `90050` / `500`）与三档预算均未变。**
+
+### Fixed / 修复
+
+- **lazy 计数单位改为 step**：旧实现按 provider 调用次数计数，而宿主一次 step 内可能多次调用（preStep assemble、step 内 refreshContext、重试），t24 实测 long 组 append/step = **0.783**（设计期望 0.33）。现改为 `createStepAwareVariantProvider`：优先监听 `session/event` 的 `step/start`；事件不可用时退回「同一 signal + 间隔 < 1500ms 视为同一 step」的时间窗；并按 `agent.id` 分桶，避免多会话 step 串扰。
+- **step 模式也接入工具结果优先**：lazy 与 step 合并到同一分支，共享 tracker，`tool/result` 之后的下一个 step 强制返回「工具结果之后」变体（`TOOL_RESULT_VARIANT_INDEX = 2`），消费一次后恢复轮换。目标是覆盖 t24 里 mid 组 33.3% 的失守场景。
+- **新增 `tools/measure-appends.mjs`**：读真实会话输出 step / append / append-per-step；`--dry-run` 做 20 step × 2 次调用模拟；结果默认落 `out/appends.json`，可用 `--out` 对齐 harness 侧路径。
+
+- **lazy counts steps, not provider calls**: the host may call the provider several times per step, which inflated appends to **0.783/step** in t24 (design assumed 0.33). `createStepAwareVariantProvider` now listens for `session/event` `step/start`, falls back to a 1500ms same-step time window, and buckets by `agent.id`.
+- **step mode also honours tool results**: both modes share the tracker; the step after a `tool/result` returns the "after tool results" variant (`TOOL_RESULT_VARIANT_INDEX = 2`) once, then resumes rotation. This targets the mid-group failure seen in t24.
+- **New `tools/measure-appends.mjs`**: reports step / append / append-per-step from real sessions; `--dry-run` simulates 20 steps × 2 calls. Output defaults to `out/appends.json`; `--out` aligns it with the harness path.
+
+### Cost table / 成本表（模拟与实测分开列）
+
+| 模式 | append/step（模拟，20 step × 2 调用） | 真实样本 | 20 step 成本（full 档，context 点估 86） |
+| --- | --- | --- | --- |
+| `off`（固定文本，整包去重） | 0.05 | 未单独测量 | ≈86 token（1 次 append） |
+| `lazy`（默认，每 3 个 step 切换 + 工具结果优先） | **0.35（20 step 模拟）** | **n=1，0.5**（`03d5a353`，v2 固定文本期，不能代表 3.1.2） | ≈602 token（7 次） |
+| `step`（每 step 切换） | 1.00 | 未单独测量 | ≈1720 token（20 次） |
+
+- **口径说明**：`0.35` 来自 `measure-appends --dry-run` 的 20 step × 2 次调用**模拟**，不是真实会话实测；当前真实样本只有 `03d5a353` 一条（append/step 0.5，属于 v2 固定文本期）。修复前 t24 的 long 组 **0.783** 是唯一真实基线。3.1.2 装进 profile 后需用新会话批量复测（`node tools/measure-appends.mjs`，非 dry-run），复测后再更新本表。
+- **3.1.0 的历史假设保留**：3.1.0 的成本表按「每 3 次 assembly 切换 ≈ 1/3」估算 lazy ≈602 token；t24 实测 0.783 证明该假设不成立。本表不删除这条历史说明。
+
+### Boundary / 边界
+
+- t24 的 n=75、首句英文 **10.7%**（Wilson [5.5%, 19.7%]）是在 **lazy 退化为近似 step（append/step 0.783）** 的条件下测得的，**不等于 3.1.2 的 lazy（模拟 0.35）+ 工具结果后切换**的效果。3.1.2 的组合效果正在单独复测（short 20 + mid 15）；结果出来前，请勿把 10.7% 当作 3.1.2 的成绩。
+- t24 的 mid 组 33.3% 尚未被新机制验证；本次发布**不声称 mid 已改善**。
+
+- t24's n=75 and 10.7% first-sentence English were measured while lazy degraded to near-step behavior (0.783 append/step). They **do not represent 3.1.2's lazy (0.35 simulated) + tool-result switching**. A separate re-test (short 20 + mid 15) is running; until it lands, 10.7% is not 3.1.2's result.
+- The mid-group 33.3% from t24 has not been validated under the new mechanism; this release **does not claim mid improvement**.
+
+### Compatibility / 兼容性
+
+- `contextVariant` 三态（`off` / `lazy` / `step`）与旧布尔映射不变；三档 preset 预算 125 / 181 / 337 未变；v1 / v2 配置键继续有效。
+
+- The three `contextVariant` modes and legacy boolean mapping are unchanged; preset budgets (125 / 181 / 337) are unchanged; v1 / v2 config keys keep working.
+
 ## [3.1.0] — 2026-11-19
 
 > 定位：token 预算可配置、可度量；判据与通道零改动（`index.js` 变化仅为文本常量与 preset 分支，五通道 order 仍 `-900` / `-880` / `5100` / `90050` / `500`）。

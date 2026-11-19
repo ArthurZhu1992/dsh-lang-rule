@@ -207,20 +207,88 @@ export function normalizeContextVariant(value) {
 
 /**
  * 变体 provider：按 mode 决定切换频率。
- * 计数以「assembly 调用次数」为准（宿主通常每 step 一次）。
- * lazy 的切换点：第 1、4、7、10… 次调用（即每 3 次切换一次）。
- * @param {'off'|'step'|'lazy'} [mode]
+ * 计数以「provider 调用次数」为准。
+ * ⚠️ 仅用于 step 模式（每次 assembly 切换）。lazy 必须用 createStepAwareVariantProvider：
+ * 宿主在一次 step 内可能多次调用 provider（preStep assemble + step 内 refreshContext + 重试），
+ * 按调用次数计数的 lazy 会被放大（t24 实测 long 组 append/step = 0.783，而不是预期的 0.33）。
+ * @param {'step'} [mode]
  * @param {readonly string[]} [variants]
  * @returns {() => string}
  */
-export function createRequestVariantProvider(mode = 'lazy', variants = REQUEST_VARIANTS) {
+export function createRequestVariantProvider(mode = 'step', variants = REQUEST_VARIANTS) {
   let cursor = 0;
   let calls = 0;
   return function nextRequestVariant() {
     calls += 1;
     if (mode === 'step' && calls > 1) cursor += 1;
-    if (mode === 'lazy' && calls > 1 && (calls - 1) % 3 === 0) cursor += 1;
     return variants[cursor % variants.length];
+  };
+}
+
+/** 「工具结果之后」变体在变体表中的下标（覆盖 mid 场景：只读 1–2 个文件、2–3 段）。 */
+export const TOOL_RESULT_VARIANT_INDEX = 2;
+
+/**
+ * step 感知的变体 provider（v3.1.1 修复 lazy 成本）。
+ *
+ * 计数单位是 **step**，不是 provider 调用次数：
+ *   - 优先：宿主事件驱动（apply 里监听 `session/event` 的 `step/start` 与 `tool/result`）；
+ *   - 退路：时间窗启发式 —— 同一 signal 且距上次调用 < sameStepWindowMs 视为同一 step。
+ *     （宿主一次 step 内的多次 assembly 调用通常紧邻；跨 step 之间隔着一次模型请求。）
+ *
+ * lazy 的切换规则：`floor(step / 3) % variants.length` → 第 1/4/7/10 个 step 切换。
+ * 工具结果后立即切换：`noteToolResult()` 之后的**下一个 step** 强制返回「工具结果之后」变体，
+ * 不等 3 步轮换（覆盖 mid：工具结果紧贴采样点）。
+ *
+ * @param {{mode?: 'lazy'|'step', variants?: readonly string[], now?: () => number, sameStepWindowMs?: number}} [options]
+ */
+export function createStepAwareVariantProvider(options = {}) {
+  const mode = options.mode ?? 'lazy';
+  const variants = options.variants ?? REQUEST_VARIANTS;
+  const now = options.now ?? (() => Date.now());
+  const sameStepWindowMs = options.sameStepWindowMs ?? 1500;
+  const toolVariant = variants[TOOL_RESULT_VARIANT_INDEX] ?? variants[variants.length - 1];
+
+  let stepIndex = -1;
+  let externalSteps = false;
+  let lastCallAt = null;
+  let lastSignal = null;
+  let pendingToolResult = false;
+
+  return {
+    /** 宿主事件：新 step 开始。调用后 text() 不再自行推进 step。 */
+    noteStepStart() {
+      externalSteps = true;
+      stepIndex += 1;
+      lastCallAt = null;
+      lastSignal = null;
+    },
+    /** 宿主事件：本 step 观察到工具结果 → 下一个 step 用「工具结果之后」变体。 */
+    noteToolResult() {
+      pendingToolResult = true;
+    },
+    /** 当前 step 序号（0-based，-1 表示尚未开始）；供 selftest/测量脚本读取。 */
+    get step() {
+      return stepIndex;
+    },
+    /** provider 本体：宿主每次 assembly 调用一次。 */
+    text(context) {
+      const at = now();
+      const signal = context?.signal ?? null;
+      if (!externalSteps) {
+        const sameStep = lastCallAt !== null && at - lastCallAt < sameStepWindowMs && signal === lastSignal;
+        if (!sameStep) stepIndex += 1;
+      }
+      lastCallAt = at;
+      lastSignal = signal;
+      if (pendingToolResult) {
+        pendingToolResult = false;
+        return toolVariant;
+      }
+      if (mode === 'step') return variants[Math.max(stepIndex, 0) % variants.length];
+      const index = Math.floor(Math.max(stepIndex, 0) / 3) % variants.length;
+      return variants[index];
+    },
   };
 }
 
@@ -375,12 +443,48 @@ export function apply(ctx, config = {}) {
     const customRequestText = typeof settings.requestText === 'string' && settings.requestText.trim() !== '';
     const baseRequestText = presetText('request') ?? REQUEST_TEXT;
     const variants = presetText('requestVariants') ?? REQUEST_VARIANTS;
-    // off → 固定文本（宿主整包去重 → 只 append 一次）；lazy（默认）/step → 函数型 provider。
-    const requestText = customRequestText
-      ? settings.requestText
-      : variantMode === 'off'
-        ? baseRequestText
-        : createRequestVariantProvider(variantMode, variants);
+    // off → 固定文本（宿主整包去重 → 只 append 一次）；
+    // step → 每 step 切换（成本最高）；
+    // lazy（默认）→ 每 3 step 切换。
+    // 两者共用 step 感知 tracker：都监听 step/start 精确计数、都接 tool/result 优先返回
+    // 「工具结果之后」变体——保证「工具结果之后」在两种模式下都生效（t33 F1）。
+    let requestText;
+    if (customRequestText) {
+      requestText = settings.requestText;
+    } else if (variantMode === 'off') {
+      requestText = baseRequestText;
+    } else {
+      // 每个 agent 一个 tracker：全局插件实例会同时服务多个会话，step 事件必须按 agent/session 隔离，
+      // 否则 A 会话的 step 会推进 B 会话的变体。
+      const trackers = new Map();
+      // settings.now 是测试钩子（可注入假时钟）；生产不设置时用 Date.now()。
+      const trackerOptions = typeof settings.now === 'function' ? { now: settings.now } : {};
+      const trackerFor = (key) => {
+        const id = typeof key === 'string' && key !== '' ? key : 'global';
+        let tracker = trackers.get(id);
+        if (tracker === undefined) {
+          tracker = createStepAwareVariantProvider({ mode: variantMode, variants, ...trackerOptions });
+          trackers.set(id, tracker);
+        }
+        return tracker;
+      };
+      // 宿主事件驱动（尽力而为）：step/start 精确推进 step；tool/result 触发下一步立即切换。
+      // 事件不可用（ctx.on 缺失、签名不符、或全局收不到）时，tracker 自动退回时间窗启发式。
+      if (typeof ctx?.on === 'function') {
+        try {
+          ctx.on('session/event', (subject, event) => {
+            if (event === null || typeof event !== 'object') return;
+            if (event.type !== 'step/start' && event.type !== 'tool/result') return;
+            const tracker = trackerFor(subject?.id ?? null);
+            if (event.type === 'step/start') tracker.noteStepStart();
+            else tracker.noteToolResult();
+          });
+        } catch {
+          debug('[lang-rule] session/event 监听不可用，变体退回时间窗计数');
+        }
+      }
+      requestText = (context) => trackerFor(context?.agent?.id ?? context?.scope?.id ?? null).text(context);
+    }
     if (typeof registry.context !== 'function') {
       // 旧宿主无 context() 通道：degraded 到「仅 system 锚」，不抛错、不阻断启动。
       skipped.push({ kind: 'context', name: requestName, reason: 'context-api-unavailable' });

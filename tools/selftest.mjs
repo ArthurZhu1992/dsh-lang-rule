@@ -34,6 +34,8 @@ import {
   estimateTokens,
   normalizeContextVariant,
   createRequestVariantProvider,
+  createStepAwareVariantProvider,
+  TOOL_RESULT_VARIANT_INDEX,
   DEFAULT_HEAD_ORDER,
   DEFAULT_SUBAGENT_ORDER,
   DEFAULT_MID_ORDER,
@@ -396,12 +398,17 @@ test('requestTailNeedsCommit 语义：首次提交、相同跳过、变化重提
 
 test('context provider 输出稳定（变体确定性循环，无随机）', () => {
   const registry = makeRegistry();
-  apply(makeCtx(registry), { contextVariant: 'step' });
+  let clock = 0;
+  apply(makeCtx(registry), { contextVariant: 'step', now: () => clock });
   const provider = registry.contexts[0].text;
   assertEqual(typeof provider, 'function', 'step 模式必须是函数型变体 provider');
-  const sequence = [provider(), provider(), provider(), provider()];
-  assertEqual(new Set(sequence.slice(0, 3)).size, 3, 'step 模式前三次应给出 3 个不同变体');
-  assertEqual(sequence[3], sequence[0], '第 4 次应确定性地回到第 1 个变体（无随机）');
+  const context = { agent: { id: 'step-agent' }, signal: {} };
+  const sequence = [];
+  for (let step = 0; step < 4; step += 1) {
+    clock += 2000;
+    sequence.push(REQUEST_VARIANTS.indexOf(provider(context)));
+  }
+  assertEqual(JSON.stringify(sequence), JSON.stringify([0, 1, 2, 0]), `step 模式应每 step 切换：${sequence}`);
   assertEqual(typeof registry.sections[3].text, 'string', '尾锚 text 必须是静态字符串');
 });
 
@@ -516,20 +523,135 @@ test('v3 step 变体按调用序轮换，第 4 次回到第 1 个', () => {
   }
 });
 
-test('v3.1 lazy 变体：12 步只在第 1/4/7/10 次切换（默认模式）', () => {
-  const provider = createRequestVariantProvider('lazy');
-  const sequence = Array.from({ length: 12 }, () => provider());
-  const indexes = sequence.map((text) => REQUEST_VARIANTS.indexOf(text));
-  assertEqual(JSON.stringify(indexes), JSON.stringify([0, 0, 0, 1, 1, 1, 2, 2, 2, 0, 0, 0]), `lazy 序列不符：${indexes}`);
-  // 切换点 = 第 1、4、7、10 次调用（index 0/3/6/9 的值变化）
-  const switches = indexes.map((value, index) => (index > 0 && value !== indexes[index - 1] ? index + 1 : null)).filter(Boolean);
-  assertEqual(JSON.stringify(switches), JSON.stringify([4, 7, 10]), `切换点不符：${switches}`);
-  // 成本对比：lazy 在 12 步里只产生 3 次新快照，step 产生 12 次。
-  const stepProvider = createRequestVariantProvider('step');
-  const stepIndexes = Array.from({ length: 12 }, () => stepProvider()).map((text) => REQUEST_VARIANTS.indexOf(text));
-  const distinctRuns = (list) => list.filter((value, index) => index === 0 || value !== list[index - 1]).length;
-  assertEqual(distinctRuns(indexes), 4, 'lazy 12 步应有 4 段（3 次切换）');
-  assertEqual(distinctRuns(stepIndexes), 12, 'step 12 步每步都变');
+test('v3.1.1 lazy 按 step 计数：12 step × 3 次 assembly 调用仍是 0,0,0,1,1,1,2,2,2,0,0,0', () => {
+  let clock = 0;
+  const tracker = createStepAwareVariantProvider({
+    mode: 'lazy',
+    variants: REQUEST_VARIANTS,
+    now: () => clock,
+    sameStepWindowMs: 1500,
+  });
+  const perStepFirst = [];
+  for (let step = 0; step < 12; step += 1) {
+    const signal = { step }; // 同一 step 的多次调用共享 signal
+    clock += 10;
+    perStepFirst.push(tracker.text({ signal }));
+    // 同一 step 内再调用 2 次（宿主 preStep assemble + step 内 refreshContext + 重试）
+    clock += 10;
+    const second = tracker.text({ signal });
+    clock += 10;
+    const third = tracker.text({ signal });
+    assertEqual(second, perStepFirst[step], `第 ${step} step 内第 2 次调用必须同变体`);
+    assertEqual(third, perStepFirst[step], `第 ${step} step 内第 3 次调用必须同变体`);
+    clock += 2000; // 跨 step：模型请求耗时
+  }
+  const indexes = perStepFirst.map((text) => REQUEST_VARIANTS.indexOf(text));
+  assertEqual(
+    JSON.stringify(indexes),
+    JSON.stringify([0, 0, 0, 1, 1, 1, 2, 2, 2, 0, 0, 0]),
+    `lazy 的 step 序列不符：${indexes}`,
+  );
+  // 关键回归：调用次数被放大 3 倍，切换点仍是每 3 个 step，而不是每 3 次调用。
+  const switches = indexes
+    .map((value, index) => (index > 0 && value !== indexes[index - 1] ? index : null))
+    .filter((value) => value !== null);
+  assertEqual(JSON.stringify(switches), JSON.stringify([3, 6, 9]), `切换点不符：${switches}`);
+});
+
+test('v3.1.1 lazy 支持宿主 step/start 事件：每 step 两次调用序列仍正确', () => {
+  let clock = 0;
+  const tracker = createStepAwareVariantProvider({ mode: 'lazy', now: () => clock });
+  const perStep = [];
+  for (let step = 0; step < 12; step += 1) {
+    tracker.noteStepStart();
+    perStep.push(tracker.text({}));
+    clock += 5;
+    const again = tracker.text({});
+    assertEqual(again, perStep[step], `第 ${step} step 的第二次调用必须同变体`);
+    clock += 1000;
+  }
+  const indexes = perStep.map((text) => REQUEST_VARIANTS.indexOf(text));
+  assertEqual(JSON.stringify(indexes), JSON.stringify([0, 0, 0, 1, 1, 1, 2, 2, 2, 0, 0, 0]));
+});
+
+test('v3.1.1 工具结果后下一步立即切「工具结果之后」变体（覆盖 mid 场景）', () => {
+  let clock = 0;
+  const tracker = createStepAwareVariantProvider({ mode: 'lazy', now: () => clock });
+  tracker.noteStepStart(); // step 0（基础变体）
+  assertEqual(tracker.text({}), REQUEST_VARIANTS[0], 'step 0 应是基础变体');
+  tracker.noteStepStart(); // step 1（仍是基础变体，未到 3 步）
+  assertEqual(tracker.text({}), REQUEST_VARIANTS[0], 'step 1 仍是基础变体');
+  tracker.noteToolResult(); // step 1 里观察到工具结果
+  tracker.noteStepStart(); // step 2
+  assertEqual(
+    tracker.text({}),
+    REQUEST_VARIANTS[TOOL_RESULT_VARIANT_INDEX],
+    '工具结果后的下一个 step 必须立即使用「工具结果之后」变体',
+  );
+  // 工具结果只消费一次：再下一步恢复按 step 轮换。
+  tracker.noteStepStart(); // step 3
+  assertEqual(tracker.text({}), REQUEST_VARIANTS[1], '恢复轮换：step 3 → floor(3/3)=1');
+});
+
+test('v3.1.2 off/step：off 固定文本，step 每 step 切换', () => {
+  // off：字符串
+  const offRegistry = makeRegistry();
+  apply(makeCtx(offRegistry), { contextVariant: 'off' });
+  assertEqual(typeof offRegistry.contexts[0].text, 'string', 'off 必须是固定字符串');
+  // step：每 step 切换（同一 step 内多次调用保持同变体）
+  const stepRegistry = makeRegistry();
+  let clock = 0;
+  apply(makeCtx(stepRegistry), { contextVariant: 'step', now: () => clock });
+  const provider = stepRegistry.contexts[0].text;
+  const context = { agent: { id: 'step-agent-2' }, signal: {} };
+  const sequence = [];
+  for (let step = 0; step < 4; step += 1) {
+    clock += 2000;
+    const first = REQUEST_VARIANTS.indexOf(provider(context));
+    const second = REQUEST_VARIANTS.indexOf(provider(context)); // 同一 step 第二次调用
+    assertEqual(second, first, `step 模式同一 step 内必须保持同变体（step ${step}）`);
+    sequence.push(first);
+  }
+  assertEqual(JSON.stringify(sequence), JSON.stringify([0, 1, 2, 0]), `step 模式必须每 step 切换：${sequence}`);
+});
+
+test('v3.1.2 step 模式也接工具结果优先（t33 F1）', () => {
+  let clock = 0;
+  const tracker = createStepAwareVariantProvider({ mode: 'step', now: () => clock });
+  tracker.noteStepStart(); // step 0
+  assertEqual(tracker.text({}), REQUEST_VARIANTS[0], 'step 0 应是变体 1');
+  tracker.noteToolResult(); // step 0 观察到工具结果
+  tracker.noteStepStart(); // step 1
+  assertEqual(
+    tracker.text({}),
+    REQUEST_VARIANTS[TOOL_RESULT_VARIANT_INDEX],
+    'step 模式下工具结果后的下一个 step 也必须立即用「工具结果之后」变体',
+  );
+  tracker.noteStepStart(); // step 2
+  assertEqual(tracker.text({}), REQUEST_VARIANTS[2], '恢复每 step 轮换：step 2 → variants[2]');
+});
+
+test('v3.1.1 lazy 按 agent 隔离：两个会话的 step 互不影响', () => {
+  const registry = makeRegistry();
+  let clock = 0;
+  apply(makeCtx(registry), { contextVariant: 'lazy', now: () => clock });
+  const provider = registry.contexts[0].text;
+  const agentA = { agent: { id: 'agent-a' }, signal: {} };
+  const agentB = { agent: { id: 'agent-b' }, signal: {} };
+  const nextStep = (context) => {
+    clock += 2000; // 跨 step：一次模型请求的耗时
+    return REQUEST_VARIANTS.indexOf(provider(context));
+  };
+  // A 连跑 3 个 step：0,0,0
+  const aSeq = [nextStep(agentA), nextStep(agentA), nextStep(agentA)];
+  assertEqual(JSON.stringify(aSeq), JSON.stringify([0, 0, 0]), `agent A 序列：${aSeq}`);
+  // B 是独立计数：它的第 1 个 step 仍是基础变体，不受 A 的 3 步影响
+  assertEqual(nextStep(agentB), 0, 'agent B 的第一个 step 应仍是基础变体');
+  // A 的第 4 个 step 切到变体 2（index 1）
+  assertEqual(nextStep(agentA), 1, 'agent A 的第 4 个 step 应切到变体 2');
+  // B 继续走自己的计数
+  const bSeq = [nextStep(agentB), nextStep(agentB)];
+  assertEqual(JSON.stringify(bSeq), JSON.stringify([0, 0]), `agent B 的前 3 个 step 都应是基础变体：${bSeq}`);
 });
 
 test('v3.1 normalizeContextVariant：off/step/lazy 三态与旧布尔兼容', () => {

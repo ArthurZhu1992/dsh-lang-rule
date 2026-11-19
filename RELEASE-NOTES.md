@@ -1,5 +1,35 @@
 # Release Notes — dsh-lang-rule
 
+## 3.1.2 — 2026-11-19
+
+### 修复：`step` 模式也接工具结果优先（t33 F1）
+
+- `contextVariant: 'step'` 此前只做「每 step 轮换」，不监听 `tool/result`；工具结果后的下一个 step 首调用仍是 `variants[1]` 而不是「工具结果之后」的 `variants[2]`。现在 `lazy` 与 `step` 共用同一个 step 感知 tracker（仅 `mode` 不同），`step` 也监听 `session/event` 并在工具结果后的下一个 step 立即切变体 3，两态一致。
+- `step` 的语义明确为「**每 step** 切换」（同一 step 内多次 assembly 调用保持同变体），不再随 provider 调用次数放大；README 配置表与成本表已同步。
+
+### 文档：成本标签如实（t33 F2）
+
+- README 成本表 `lazy` 的 `0.35` 明确标为「20 step 模拟」，并注明真实样本当前只有 1 条（0.5）；真实值需 v3.1.1+ 进 profile 后用新会话复测。
+- 注明 `tools/measure-appends.mjs` 默认输出 `work/dsh-lang-rule/out/appends.json`，与 harness 侧 `work/lang-rule-tests/out/request-appends.json` 的路径差异，可用 `--out` 对齐。
+
+### 不变
+
+- 判据文本、五通道 order、三档 preset、`off` 语义均未改；`step` 与 `lazy` 的成本差异仍为「每步换」vs「每 3 步换」。
+
+## 3.1.1 — 2026-11-19
+
+### 修复：lazy 的成本节省没有兑现
+
+- **根因**：宿主在一个 step 内可能多次调用 context provider（`preStep()` 的 `systemPrompt.assemble()`、step 内的 `refreshContext()`、失败重试）。v3.1 按「provider 调用次数」计数，`lazy` 被放大成「每 1–2 个 step 就切换」——t24 实测 long 组 `append/step = 0.783`，而设计预期是 0.33。
+- **修复 1：按 step 计数**。新增 `createStepAwareVariantProvider`：优先监听宿主 `session/event` 的 `step/start`；事件不可用时退回「同一 signal + 距上次调用 <1500ms 视为同一 step」的时间窗启发式。构造 12 step × 3 次 provider 调用的假 ctx，变体序列仍是 `0,0,0,1,1,1,2,2,2,0,0,0`（每 3 step 切换）。
+- **修复 2：工具结果后立即切换**。`tool/result` 之后的下一个 step 强制使用「工具结果之后」变体，不等 3 步轮换；直接覆盖 t24 暴露的 mid 场景（只读 1–2 个文件、2–3 段，5/15 = 33.3% 首句英文）。
+- **新增 `tools/measure-appends.mjs`**：读真实会话统计 step 数、runtime-context append 次数与 append/step；`--dry-run` 做 20 step × 2 次调用的机制模拟。结果落盘 `out/appends.json`（observed / simulated / theory 三段）。
+- **README 成本表重算**：`off 0.05` / `lazy 0.35`（模拟值，修复前实测 0.783）/ `step 1.00`，并写明「为什么 lazy 曾经没兑现」。
+
+### 不变
+
+- 判据文本（可判定首句）、五通道 order（-900/-880/5100/90050/500）、三档 preset 与 `off`/`step` 语义均未改；`contextVariant: step` 仍每次 assembly 切换。
+
 ## 3.1.0 — 2026-11-19
 
 ### 新增：token 预算（不改判据、不改通道）
