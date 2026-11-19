@@ -51,27 +51,27 @@ All notable changes to this project are documented here, in the spirit of Keep a
 
 ### Verified / 实测（真实数据，不美化）
 
-以下均为 2026-11-18 在本机实测结果，原文数据在 `work/lang-rule-tests/out/`（发布仓库不包含该目录，数字可复算）。
+以下均为 2026-11-19 的快照数据，原文在 `work/lang-rule-tests/out/`（发布仓库不包含该目录，数字可复算）。
 
-1. **headless 3 probe 不足以证明判据成立**：3 条 probe 中首句英文 **2/3 = 66.7%**，Wilson 95% 区间 **[20.8%, 93.9%]**。要检验「首句英文 < 5%」，0 失败至少需要 n≈60；n=3 时区间上界约 63%。**该轮未通过 <5% 判据**。
+1. **headless 3 probe 不足以证明判据成立**：`work/lang-rule-tests/out/live.json`（快照 `2026-11-19T00:09Z`）显示 3 条 probe 中首句英文 **1/3 = 33.3%**，Wilson 95% 区间 **[6.1%, 79.2%]**；区间下界 6.1% 仍高于 5% 阈值，**该轮未通过 <5% 判据**。要检验「首句英文 < 5%」，0 失败至少需要 n≈60；即使 0 失败，n=3 时区间上界也约 63%。
 2. **desktop profile 上 per-request 通道被抑制**：`dsh-norefuse` 的 `includeRuntimeContext: false` 让上下文快照整体关闭。v2 生效期的 6 条 probe 会话 **0/6 有 runtime-context 事件**（另有 v1 生效期 8 条对照同样为 0）。实际生效的是 4 个 section + mid，没有 request-tail；插件按设计进入 degraded 模式，不报错。
-3. **历史语料零回归**：基线 264 个会话、同哈希重算 262 个；英文主导会话 **62 → 62**（Δ0），中文主导率 **76.5% → 76.3%**（Δ −0.2pp，阈值 ≤2pp），同哈希会话主导语言全部一致。
+3. **历史语料零回归**：`work/lang-rule-tests/out/corpus.json`（快照 `2026-11-19T00:11Z`）基线 264 个会话、同哈希重算 **261** 个（drift 3，均为活跃会话在基线快照后继续写入）；英文主导会话 **62 → 62**（Δ0），中文主导率 **76.5% → 76.2%**（Δ −0.3pp，阈值 ≤2pp），同哈希会话主导语言全部一致。
 
-- **A 3-probe headless run is not enough to claim the <5% target**: first-sentence English was **2/3 = 66.7%**, Wilson 95% CI **[20.8%, 93.9%]**. Testing "<5% first-sentence English" with zero failures needs n≈60; at n=3 the upper bound is about 63%. **This run did not pass the <5% criterion.**
+- **A 3-probe headless run is not enough to claim the <5% target**: `work/lang-rule-tests/out/live.json` (snapshot `2026-11-19T00:09Z`) shows first-sentence English at **1/3 = 33.3%**, Wilson 95% CI **[6.1%, 79.2%]**; the lower bound (6.1%) is still above the 5% threshold, so **this run did not pass the <5% criterion**. Testing "<5%" with zero failures needs n≈60; even with zero failures the n=3 upper bound is about 63%.
 - **The per-request channel is suppressed on the desktop profile**: `dsh-norefuse` sets `includeRuntimeContext: false`, turning runtime-context snapshots off. In the v2 window, **0 of 6** probe sessions had runtime-context events (a v1-window batch of 8 was also 0). What actually runs is four sections plus mid; there is no request-tail, and the plugin degrades without errors.
-- **No historical-corpus regression**: baseline 264 sessions, 262 recomputed with identical hashes; English-dominated sessions **62 → 62** (Δ0), Chinese-dominated rate **76.5% → 76.3%** (Δ −0.2pp, threshold ≤2pp), and every same-hash session kept its dominant language.
+- **No historical-corpus regression**: `work/lang-rule-tests/out/corpus.json` (snapshot `2026-11-19T00:11Z`) — baseline 264 sessions, **261** recomputed with identical hashes (drift 3, all active sessions that kept writing after the baseline snapshot); English-dominated sessions **62 → 62** (Δ0), Chinese-dominated rate **76.5% → 76.2%** (Δ −0.3pp, threshold ≤2pp), and every same-hash session kept its dominant language.
 
 ### Known limitations / 已知限制
 
 - **旧宿主无 `systemPrompt.context()` 时降级为 4 个 section**：没有 per-request 尾注，`logger.debug` 记录 `context-api-unavailable`；用 `tools/verify-installed.mjs --strict` 自查。
 - **整包 sections 去重**：per-request 快照按整包比较，宿主自身 runtime section 变化时会整包重发，我方尾注随之**重复出现一次**。
-- **「禁止英文起手短语」可被绕过**：probe-e 的 prompt 以 `The task:` 开头（不在禁词表内），该会话首句仍是英文、整段英文（CJK 比 0.028）。禁词表是提示词层的启发式，不是可判定约束。
+- **「禁止英文起手短语」可被绕过**：`work/lang-rule-tests/out/agent-probe-v2.json` 中 session `03d5a353` 的 probe 以 `The task:` 开头（不在禁词表内），该会话首句仍是英文、整段英文（CJK 比 0.028）。禁词表是提示词层的启发式，不是可判定约束。
 - **约束强度仍是提示词层**，不能保证每次都输出中文；量化验收以 `tools/lang-audit.mjs --json` 的锚阶段分层为准。
 - **v3 方向**：把约束改成可判定形式（例如「首句必须包含中文字符」的硬判据，或利用 prefill 让模型无法以英文起手），而不是继续加长禁词表。
 
 - **Old hosts without `systemPrompt.context()` degrade to four sections**, with no request-tail; `logger.debug` records `context-api-unavailable`. Check with `tools/verify-installed.mjs --strict`.
 - **Whole-bundle deduplication**: the per-request snapshot is compared as a whole, so when another runtime section changes the bundle is re-appended and our note **appears once more**.
-- **The "no English opener" rule can be bypassed**: probe-e's prompt started with `The task:` (not on the blocked list), and that session was English in both the first sentence and the whole trace (CJK ratio 0.028). The blocked list is a prompt-layer heuristic, not a decidable constraint.
+- **The "no English opener" rule can be bypassed**: in `work/lang-rule-tests/out/agent-probe-v2.json`, the probe for session `03d5a353` started with `The task:` (not on the blocked list); that session was English in both the first sentence and the whole trace (CJK ratio 0.028). The blocked list is a prompt-layer heuristic, not a decidable constraint.
 - **The constraint remains prompt-layer only** and cannot guarantee Chinese output every time; quantitative acceptance relies on the anchor-layer breakdown from `tools/lang-audit.mjs --json`.
 - **v3 direction**: make the constraint decidable (for example "the first sentence must contain a CJK character", or use prefill so an English opener cannot be produced) instead of extending the blocked-phrase list.
 

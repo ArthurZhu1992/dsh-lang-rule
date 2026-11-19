@@ -22,12 +22,12 @@
 - 首句约束是提示词层约束，不能保证每次都输出中文；量化验收以 `lang-audit --json` 的 `summary.byAnchorLayer` 为准。
 - per-request 快照的去重单位是**整包 sections**：宿主自身 runtime context 变化时整包重发，尾注随之重复出现一次。
 
-### 实测口径（2026-11-18）
+### 实测口径（快照 `2026-11-19T00:09Z` / `00:11Z`）
 
-- headless 3 probe：首句英文 **2/3**，Wilson 95% 区间 **[20.8%, 93.9%]**，**未通过 <5% 判据**（0 失败需 n≈60）。
+- headless 3 probe（`out/live.json`）：首句英文 **1/3 = 33.3%**，Wilson 95% 区间 **[6.1%, 79.2%]**；下界 6.1% 仍高于 5% 阈值，**未通过 <5% 判据**（0 失败需 n≈60）。
 - desktop profile：`dsh-norefuse` 的 `includeRuntimeContext: false` 使 per-request 通道被抑制，v2 生效期 6 条 probe **0/6 有 runtime-context 事件**，实际运行为 4 个 section + mid。
-- 历史语料零回归：英文主导会话 **62 → 62**，中文主导率 **76.5% → 76.3%**（Δ −0.2pp）。
-- 已知可绕过：probe-e 以 `The task:` 开头（不在禁词表内），该会话首句与整段仍是英文。
+- 历史语料零回归（`out/corpus.json`）：同哈希重算 **261** 个（drift 3），英文主导会话 **62 → 62**，中文主导率 **76.5% → 76.2%**（Δ −0.3pp）。
+- 已知可绕过：`out/agent-probe-v2.json` 中 session `03d5a353` 以 `The task:` 开头（不在禁词表内），该会话首句与整段仍是英文。
 
 ## 1.0.0
 
