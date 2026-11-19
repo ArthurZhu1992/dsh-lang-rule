@@ -1,6 +1,6 @@
 # Changelog
 
-本文件记录 dsh-lang-rule 的对外版本变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/) 与 [VERSIONING.md](./VERSIONING.md)。
+本文件记录 dsh-zh-yayan 的对外版本变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/) 与 [VERSIONING.md](./VERSIONING.md)。
 
 **1.0.0 是本仓库的市场首发版本。** 开发期曾打过 2.x / 3.x 快照 tag（一天内多次迭代），它们从未对外发布，对应的 tag 与 Release 已删除归档；旧 commit 仍保留在 git 历史中，本文件以附录形式保留其记录。对外只认 1.0.0 及之后的正式版本。
 
@@ -8,12 +8,14 @@
 
 ### Changed / 变更
 
+- **重命名**：包名 `dsh-lang-rule` → `dsh-zh-yayan`；运行时插件名（`export const name = "lang-rule"`）与全部 section 名（`lang-rule`、`lang-rule:subagent`、`lang-rule:mid`、`lang-rule:tail`、`lang-rule:request-tail`）保持不变，老配置的 `sectionName` / `tailSectionName` 继续有效。保留 section 名是为了让已部署配置与历史会话里的锚文本引用不失效；`cordis.patch.yml` 的 `id` 也保留 `dsh-lang-rule`，只改 `name`。
 - README 首屏改版为「起笔即中文」定位：首屏直接给出三条可验证承诺（首句决定整段语言、覆盖全部 agent 角色、`verify-installed --strict` 一条命令自查），不再以版本号叙事开场。
 - 对外文案定稿（起笔即中文 / 一线到底 / 说得出就查得到）：市场条目与 README 首屏统一到这一主轴，作用域与可验证性在同一段里说清。
 - CHANGELOG 中一处完整会话 UUID 缩为 8 位前缀（`03d5a353`），与其余引用保持一致，避免把完整会话标识写进发布文档。
 
 ### English
 
+- **Rename**: package `dsh-lang-rule` -> `dsh-zh-yayan`; the runtime plugin name (`export const name = "lang-rule"`) and every section name stay unchanged, so existing `sectionName` / `tailSectionName` config keeps working. The bundle id in `cordis.patch.yml` also stays `dsh-lang-rule`; only `name` changes.
 - README hero rewritten around "the first line lands in Chinese": three verifiable promises up front (first sentence decides the trace, every agent role covered, one-command self-check), with no version-number narrative.
 - Public copy finalized around "the first line lands in Chinese / all the way down / what it claims, you can verify"; the market entry and README hero now share one message.
 - One full session UUID in this file was shortened to its 8-character prefix (`03d5a353`) for consistency.
@@ -337,11 +339,11 @@
 ### Compatibility / 兼容性
 
 - **v1 的配置键继续有效**：`text`、`order`、`sectionName`、`tailText`、`tailOrder`、`tailSectionName`、`tailEnabled`。v1 配置原样放入 v2 不会报错，语义不变；新增通道默认开启，可用 `subagentEnabled: false`、`midEnabled: false`、`requestTail: 'off'` 逐条关掉。
-- 安装方式的改动手动步骤与 v1 相同：`dsh plugin --profile <your-profile> add github:ArthurZhu1992/dsh-lang-rule`，重启 DSH 生效。
+- 安装方式的改动手动步骤与 v1 相同：`dsh plugin --profile <your-profile> add github:ArthurZhu1992/dsh-zh-yayan`，重启 DSH 生效。
 - `engines.node >= 22.15`（审计工具需要 `zlib.zstdDecompressSync`），`engines.dsh >= 0.2.0`。
 
 - **v1 configuration keys keep working**: `text`, `order`, `sectionName`, `tailText`, `tailOrder`, `tailSectionName`, `tailEnabled`. An unchanged v1 config behaves the same in v2; new channels are on by default and can be disabled one by one with `subagentEnabled: false`, `midEnabled: false`, `requestTail: 'off'`.
-- Install steps are unchanged from v1: `dsh plugin --profile <your-profile> add github:ArthurZhu1992/dsh-lang-rule`, then restart DSH.
+- Install steps are unchanged from v1: `dsh plugin --profile <your-profile> add github:ArthurZhu1992/dsh-zh-yayan`, then restart DSH.
 - `engines.node >= 22.15` (the auditor uses `zlib.zstdDecompressSync`), `engines.dsh >= 0.2.0`.
 
 ### 开发期首版 v1 快照（未对外发布）

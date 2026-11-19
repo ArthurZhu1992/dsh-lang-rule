@@ -1,14 +1,11 @@
-# dsh-lang-rule
+# dsh-zh-yayan · 雅言
 
-## 所思所言，皆成中文
+> 子所雅言，《诗》《书》、执礼，皆雅言也。——《论语·述而》
 
-**DSH 起笔即中文，一线到底。**
-
-首句是中文，往下就都是中文；首句滑成英文，整段跟着走——264 个会话里，81.1% 如此。
-一个人说中文容易，一支队伍都说中文才算数：主 agent、子智能体、AgentTeams、workflow 子智能体、后台任务。
-不必信它，跑一条 `verify-installed --strict`，看它在你机器上到底有没有生效。
+所思所言，皆成中文。DSH 起笔即中文，一线到底。
 
 ---
+
 
 
 
@@ -159,7 +156,7 @@ node tools/measure-appends.mjs --dry-run       # 不读会话，只跑 20 step �
 # 结果落盘 out/appends.json，含 observed / simulated / theory 三段
 ```
 
-> 路径约定：本脚本默认输出 `work/dsh-lang-rule/out/appends.json`；harness 侧的批量数据在 `work/lang-rule-tests/out/request-appends.json`（开发期 3.1.0 旧口径，由测试架构师产出）。两者可用 `--out <path>` 对齐，内容字段一致。
+> 路径约定：本脚本默认输出 `work/dsh-zh-yayan/out/appends.json`；harness 侧的批量数据在 `work/lang-rule-tests/out/request-appends.json`（开发期 3.1.0 旧口径，由测试架构师产出）。两者可用 `--out <path>` 对齐，内容字段一致。
 
 `--dry-run` 模拟（20 step × 2 次 provider 调用）：`off 1 次 / 0.05`、`lazy 7 次 / 0.35`、`step 20 次 / 1.00`；修复前 t24 实测 long 组为 `0.783`。修复后 lazy 的理论值为 `0.33–0.5`（工具结果越密越高），显著低于修复前的 0.783。**注意 0.35 是模拟值**，真实值以部署后新会话的 `measured` 输出为准。
 
@@ -204,8 +201,8 @@ node tools/measure-appends.mjs --dry-run       # 不读会话，只跑 20 step �
 示例（profile 的 cordis 配置）：
 
 ```yaml
-- id: dsh-lang-rule
-  name: dsh-lang-rule
+- id: dsh-zh-yayan
+  name: dsh-zh-yayan
   config:
     preset: standard          # minimal | standard | full（默认 full）
     requestTail: context      # off / false = 回到 v1 行为
@@ -323,7 +320,7 @@ node tools/measure-tool-variant.mjs --replay \
 
 竞品里综合评分最高的 58fly/dsh-language-guard（40/45）用的是「工具文档之后重申一段约 146 字符约束（order 5100）+ 周期性提醒」，其 README 自认 **Subagents are skipped**（子会话只继承系统提示、周期提醒不覆盖）。v3 与之的差异：
 
-| 维度 | 58fly | dsh-lang-rule v3 |
+| 维度 | 58fly | dsh-zh-yayan v3 |
 | --- | --- | --- |
 | 约束口径 | 「用中文」 | **可判定首句**：第一句必须含中文字符、不得以 ASCII 字母开头（黑名单只作辅助） |
 | 子会话覆盖 | 跳过 subagent | 子智能体强化锚 + per-request context 对全部 agent 作用域生效 |
@@ -335,17 +332,27 @@ mid 段的 order 5100 借鉴了它的实测结论（工具 schema 5000 之后仍
 
 ## 安装
 
+从 GitHub 安装（推荐）：
+
 ```bash
-# profile 直接引用本地包
-# ~/.dsh/profiles/<profile>/package.json
-#   "dependencies": { "dsh-lang-rule": "file:../../plugins/dsh-lang-rule" },
-#   "dsh.profile.bundles": [ …, "dsh-lang-rule" ]
+dsh plugin --profile <your-profile> add github:ArthurZhu1992/dsh-zh-yayan
 ```
 
-或用插件管理器：
+`<your-profile>` 换成你的 profile 名，例如 `desktop`（桌面端默认）或 `web`。安装后重启 DSH。
 
+从本地副本安装（等价，便于调试）：
+
+```bash
+git clone https://github.com/ArthurZhu1992/dsh-zh-yayan
+dsh plugin --profile <your-profile> add file:/absolute/path/to/dsh-zh-yayan
 ```
-plugin_manager { action: "install_bundle", target: "dsh-lang-rule" }
+
+或用插件管理器：`plugin_manager { action: "install_bundle", target: "dsh-zh-yayan" }`。
+
+卸载：
+
+```bash
+dsh plugin --profile <your-profile> remove dsh-zh-yayan
 ```
 
 ---

@@ -1,6 +1,6 @@
-# dsh-lang-rule 组合包补丁：作为 bundle 自动插入自身。
+# dsh-zh-yayan（雅言）组合包补丁：作为 bundle 自动插入自身。
 # 之前靠 profile 的 cordis.patch.yml 手插，所以它不出现在「已安装插件」列表里。
 
 - insert:
     - id: dsh-lang-rule
-      name: dsh-lang-rule
+      name: dsh-zh-yayan

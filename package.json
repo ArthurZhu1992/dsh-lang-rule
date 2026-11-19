@@ -1,5 +1,5 @@
 {
-  "name": "dsh-lang-rule",
+  "name": "dsh-zh-yayan",
   "version": "1.0.0",
   "description": "Deployment-level language policy: judgment-shaped first-sentence rule (Chinese character required, no ASCII first letter), Chinese few-shot, step-aware per-request context whose tool-result variant covers the whole next step, dual metrics, and three token presets, for every dsh agent including subagents.",
   "type": "module",
@@ -51,11 +51,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ArthurZhu1992/dsh-lang-rule.git"
+    "url": "git+https://github.com/ArthurZhu1992/dsh-zh-yayan.git"
   },
-  "homepage": "https://github.com/ArthurZhu1992/dsh-lang-rule#readme",
+  "homepage": "https://github.com/ArthurZhu1992/dsh-zh-yayan#readme",
   "bugs": {
-    "url": "https://github.com/ArthurZhu1992/dsh-lang-rule/issues"
+    "url": "https://github.com/ArthurZhu1992/dsh-zh-yayan/issues"
   },
   "engines": {
     "node": ">=22.15",
