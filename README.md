@@ -369,7 +369,10 @@ dsh plugin --profile <your-profile> remove dsh-lang-rule
 dsh plugin --profile <your-profile> add github:ArthurZhu1992/dsh-zh-yayan
 
 # 3) 重载 profile 或重启 DSH，然后确认只剩新名
+#    持有仓库源码副本时（在仓库根执行）：
 node tools/verify-installed.mjs --strict   # 期望 PASS，详情出现 zh-yayan:request-tail
+#    普通安装用户没有源码，改用插件管理器确认，或新开会话观察 system 提示只含 zh-yayan* 段：
+dsh plugin --profile <your-profile> why dsh-zh-yayan
 ```
 
 旧配置里若显式写过 `sectionName` / `tailSectionName` / `subagentSectionName` / `midSectionName` / `requestSectionName` 的旧值（`lang-rule*`），请改成 `zh-yayan*`，否则会按旧名注册。

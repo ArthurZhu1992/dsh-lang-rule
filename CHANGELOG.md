@@ -24,6 +24,8 @@
 
 ## [1.0.0] — 2026-11-19
 
+> **注**：本条目描述 1.0.0 tag 时的旧 section 名（`lang-rule*`）；自 `[Unreleased]` 起 section 名改为 `zh-yayan` / `zh-yayan:subagent` / `zh-yayan:mid` / `zh-yayan:tail` / `zh-yayan:request-tail`（详见 Unreleased 的重命名与迁移说明）。
+
 ### Added / 新增
 
 - **五通道注入**（order 与语义稳定）：`section lang-rule` @ `-900`（头部铁律）、`section lang-rule:subagent` @ `-880`（子智能体/团队/后台任务点名）、`section lang-rule:mid` @ `5100`（工具 schema 之后重申）、`section lang-rule:tail` @ `90050`（尾部首句锚）、`context lang-rule:request-tail` @ `500`（per-request runtime-context，`required: true`）。
