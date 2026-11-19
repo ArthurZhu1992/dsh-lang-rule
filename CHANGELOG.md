@@ -4,31 +4,14 @@
 
 **1.0.0 是本仓库的市场首发版本。** 开发期曾打过 2.x / 3.x 快照 tag（一天内多次迭代），它们从未对外发布，对应的 tag 与 Release 已删除归档；旧 commit 仍保留在 git 历史中，本文件以附录形式保留其记录。对外只认 1.0.0 及之后的正式版本。
 
-## [Unreleased]
-
-### Changed / 变更
-
-- **重命名（全量）**：包名 `dsh-lang-rule` → `dsh-zh-yayan`，运行时标识一并改名——`export const name = 'zh-yayan'`，五个 section 名改为 `zh-yayan` / `zh-yayan:subagent` / `zh-yayan:mid` / `zh-yayan:tail` / `zh-yayan:request-tail`，`cordis.patch.yml` 的 `id` 与 `name` 均为 `dsh-zh-yayan`，工具链（verify-installed / lang-audit / measure-appends / measure-tool-variant）同步新名。
-- **迁移三步**（旧包与新包不能同时加载，否则会出现两套锚）：① `dsh plugin --profile <profile> remove dsh-lang-rule`；② `dsh plugin --profile <profile> add github:ArthurZhu1992/dsh-zh-yayan`；③ 重载/重启 DSH，并用 `verify-installed --strict` 确认只剩 `zh-yayan:request-tail`。显式写过旧 `sectionName` 系列的配置需改成 `zh-yayan*`。
-- README 首屏改版为「起笔即中文」定位：首屏直接给出三条可验证承诺（首句决定整段语言、覆盖全部 agent 角色、`verify-installed --strict` 一条命令自查），不再以版本号叙事开场。
-- 对外文案定稿（起笔即中文 / 一线到底 / 说得出就查得到）：市场条目与 README 首屏统一到这一主轴，作用域与可验证性在同一段里说清。
-- CHANGELOG 中一处完整会话 UUID 缩为 8 位前缀（`03d5a353`），与其余引用保持一致，避免把完整会话标识写进发布文档。
-
-### English
-
-- **Rename (full)**: package `dsh-lang-rule` -> `dsh-zh-yayan`; runtime identifiers change too — `export const name = 'zh-yayan'`, the five section names become `zh-yayan` / `zh-yayan:subagent` / `zh-yayan:mid` / `zh-yayan:tail` / `zh-yayan:request-tail`, `cordis.patch.yml` uses `dsh-zh-yayan` for both `id` and `name`, and the tooling matches the new names.
-- **Migration** (old and new packages must not load together, or two sets of anchors appear): remove `dsh-lang-rule`, add `github:ArthurZhu1992/dsh-zh-yayan`, then reload/restart and confirm with `verify-installed --strict`. Explicit old `sectionName*` config must switch to `zh-yayan*`.
-- README hero rewritten around "the first line lands in Chinese": three verifiable promises up front (first sentence decides the trace, every agent role covered, one-command self-check), with no version-number narrative.
-- Public copy finalized around "the first line lands in Chinese / all the way down / what it claims, you can verify"; the market entry and README hero now share one message.
-- One full session UUID in this file was shortened to its 8-character prefix (`03d5a353`) for consistency.
-
 ## [1.0.0] — 2026-11-19
-
-> **注**：本条目描述 1.0.0 tag 时的旧 section 名（`lang-rule*`）；自 `[Unreleased]` 起 section 名改为 `zh-yayan` / `zh-yayan:subagent` / `zh-yayan:mid` / `zh-yayan:tail` / `zh-yayan:request-tail`（详见 Unreleased 的重命名与迁移说明）。
 
 ### Added / 新增
 
-- **五通道注入**（order 与语义稳定）：`section lang-rule` @ `-900`（头部铁律）、`section lang-rule:subagent` @ `-880`（子智能体/团队/后台任务点名）、`section lang-rule:mid` @ `5100`（工具 schema 之后重申）、`section lang-rule:tail` @ `90050`（尾部首句锚）、`context lang-rule:request-tail` @ `500`（per-request runtime-context，`required: true`）。
+- **运行时标识（首发即新名）**：插件名 `zh-yayan`，五个 section 为 `zh-yayan` / `zh-yayan:subagent` / `zh-yayan:mid` / `zh-yayan:tail` / `zh-yayan:request-tail`；`cordis.patch.yml` 的 `id` 与 `name` 均为 `dsh-zh-yayan`；包名 `dsh-zh-yayan`（旧名 `dsh-lang-rule` 只存在于 1.0.0 之前的开发期快照，见文末附录）。工具链（verify-installed / lang-audit / measure-appends / measure-tool-variant）与新名同步。
+- **从旧包迁移**（旧包与新包不能同时加载，否则会出现两套锚）：① `dsh plugin --profile <profile> remove dsh-lang-rule`；② `dsh plugin --profile <profile> add github:ArthurZhu1992/dsh-zh-yayan`；③ 重载/重启 DSH，并用 `verify-installed --strict` 确认只剩 `zh-yayan:request-tail`。显式写过旧 `sectionName` 系列的配置需改成 `zh-yayan*`。
+- **README 与对外文案**：首屏定位「起笔即中文」，市场条目与 README 共用同一主轴；README 末尾含中英 Keywords 段。
+- **五通道注入**（order 与语义稳定）：`section zh-yayan` @ `-900`（头部铁律）、`section zh-yayan:subagent` @ `-880`（子智能体/团队/后台任务点名）、`section zh-yayan:mid` @ `5100`（工具 schema 之后重申）、`section zh-yayan:tail` @ `90050`（尾部首句锚）、`context zh-yayan:request-tail` @ `500`（per-request runtime-context，`required: true`）。
 - **可判定首句判据**：第一句必须包含中文字符（U+4E00–U+9FFF），且不得以 ASCII 字母开头。原「禁止英文起手短语」黑名单降级为 `ENGLISH_OPENER_HINTS` 辅助提示（明确标注枚举不完备、不得作为唯一判据）。
 - **2 条中文 few-shot**（总长 41 字符，无英文示例）。
 - **step 级上下文变体**：`REQUEST_VARIANTS` 三版按 step 轮换；`tool/result` 之后的**整个下一个 step** 使用「工具结果之后」变体（`pendingToolStep → toolStepActive` 两态）；`contextVariant` 三态 `off` / `lazy`（默认）/ `step`，旧布尔 `false → off`、`true → step`。
@@ -38,6 +21,8 @@
 - **CI**：`.github/workflows/verify.yml`（push / PR：7 文件 `node --check`、selftest、node:test、verify-installed、measure-appends `--dry-run`、measure-tool-variant `--simulate`、manifest 校验，Node 22.15 / 24）；`.github/workflows/publish.yml`（tag 推送：`tag == v<version>`、CHANGELOG 首段 == version、`tag commit == main`、tag 树与 main 一致）。
 - **文档**：中英 README（含「如何验证是否生效」）、`docs/DESIGN.md`（order 推导与宿主源码定位）、`RELEASE-NOTES.md`、`VERSIONING.md`、中英 locale、MIT LICENSE、纯几何 `icon.svg`。
 
+- **Runtime identifiers (new names from day one)**: plugin name `zh-yayan`; the five sections are `zh-yayan` / `zh-yayan:subagent` / `zh-yayan:mid` / `zh-yayan:tail` / `zh-yayan:request-tail`; `cordis.patch.yml` uses `dsh-zh-yayan` for both `id` and `name`; package name `dsh-zh-yayan` (the old `dsh-lang-rule` name exists only in pre-1.0.0 development snapshots, see the appendix). Tooling matches the new names.
+- **Migration from the old package** (they must not load together, or two sets of anchors appear): remove `dsh-lang-rule`, add `github:ArthurZhu1992/dsh-zh-yayan`, then reload/restart and confirm with `verify-installed --strict`. Explicit old `sectionName*` config must switch to `zh-yayan*`.
 - **Five channels**: head `-900`, subagent `-880`, mid `5100`, tail `90050`, per-request context `500` (`required: true`).
 - **Decidable first-sentence rule** (CJK character required, no ASCII first letter); the phrase blacklist is an explicit, incomplete hint list.
 - **Two Chinese few-shot examples**, three step-level context variants (`off` / `lazy` / `step`) with the tool-result variant covering the whole next step.
