@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "dsh-lang-rule",
+    "title": "dsh-zh-yayan",
     "description": "Deployment-level language policy v3: a judgeable first-sentence rule (must contain a Chinese character, must not start with an ASCII letter) plus Chinese few-shot and a step-varying request-tail variant, covering subagents, teammates and background tasks."
   }
 }

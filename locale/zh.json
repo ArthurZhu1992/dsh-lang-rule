@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "dsh-lang-rule",
+    "title": "dsh-zh-yayan",
     "description": "部署级语言策略 v3：可判定的首句约束（第一句必须含中文字符、不得以 ASCII 字母开头）+ 中文 few-shot + 每步轮换的 request-tail 变体，覆盖子智能体、团队成员与后台任务。"
   }
 }

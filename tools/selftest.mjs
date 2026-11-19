@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * selftest — dsh-lang-rule v2 的注册契约自检（不需要 dsh 运行时）。
+ * selftest — dsh-zh-yayan v2 的注册契约自检（不需要 dsh 运行时）。
  *
  * 用假 ctx 断言：
  *   - 默认注册 5 个通道（4 个 system prompt section + 1 个 per-request runtime context）；
@@ -110,22 +110,22 @@ test('默认注册 5 个通道：4 个 section + 1 个 per-request context', () 
   assertEqual(registry.sections.length, 4, 'section 数量');
   assertEqual(registry.contexts.length, 1, 'context 数量');
   const names = registry.sections.map((entry) => entry.name);
-  assertEqual(names[0], 'lang-rule', '头锚 name');
-  assertEqual(names[1], 'lang-rule:subagent', '子智能体锚 name');
-  assertEqual(names[2], 'lang-rule:mid', 'mid 锚 name');
-  assertEqual(names[3], 'lang-rule:tail', '尾锚 name');
-  assertEqual(registry.contexts[0].name, 'lang-rule:request-tail', 'per-request context name');
+  assertEqual(names[0], 'zh-yayan', '头锚 name');
+  assertEqual(names[1], 'zh-yayan:subagent', '子智能体锚 name');
+  assertEqual(names[2], 'zh-yayan:mid', 'mid 锚 name');
+  assertEqual(names[3], 'zh-yayan:tail', '尾锚 name');
+  assertEqual(registry.contexts[0].name, 'zh-yayan:request-tail', 'per-request context name');
 });
 
 test('默认 order：头 -900 / 子 -880 / mid 5100 / 尾 ≥90050 / context 500', () => {
   const registry = makeRegistry();
   apply(makeCtx(registry), {});
   const orderOf = (name) => registry.sections.find((entry) => entry.name === name)?.order;
-  assertEqual(orderOf('lang-rule'), DEFAULT_HEAD_ORDER, '头锚 order');
-  assertEqual(orderOf('lang-rule:subagent'), DEFAULT_SUBAGENT_ORDER, '子智能体锚 order');
-  assertEqual(orderOf('lang-rule:mid'), DEFAULT_MID_ORDER, 'mid 锚 order');
-  assert(orderOf('lang-rule:tail') >= DEFAULT_TAIL_ORDER, '尾锚必须 ≥ 90050');
-  assert(orderOf('lang-rule:tail') > HOST_SECTION_MAX_FALLBACK, '尾锚必须排在宿主 section 上界之后');
+  assertEqual(orderOf('zh-yayan'), DEFAULT_HEAD_ORDER, '头锚 order');
+  assertEqual(orderOf('zh-yayan:subagent'), DEFAULT_SUBAGENT_ORDER, '子智能体锚 order');
+  assertEqual(orderOf('zh-yayan:mid'), DEFAULT_MID_ORDER, 'mid 锚 order');
+  assert(orderOf('zh-yayan:tail') >= DEFAULT_TAIL_ORDER, '尾锚必须 ≥ 90050');
+  assert(orderOf('zh-yayan:tail') > HOST_SECTION_MAX_FALLBACK, '尾锚必须排在宿主 section 上界之后');
   assert(registry.contexts[0].order > HOST_CONTEXT_MAX_FALLBACK, 'per-request context 必须排在宿主 context 上界之后');
   assertEqual(registry.contexts[0].order, DEFAULT_REQUEST_ORDER, 'context 默认 order');
 });
@@ -133,7 +133,7 @@ test('默认 order：头 -900 / 子 -880 / mid 5100 / 尾 ≥90050 / context 500
 test('mid 锚夹在工具文档(5000)与结构化输出(9000)之间：order 5100', () => {
   const registry = makeRegistry();
   apply(makeCtx(registry), {});
-  const mid = registry.sections.find((entry) => entry.name === 'lang-rule:mid');
+  const mid = registry.sections.find((entry) => entry.name === 'zh-yayan:mid');
   assert(mid.order > 5000 && mid.order < 9000, `mid order 期望 (5000,9000)，实际 ${mid.order}`);
 });
 
@@ -150,7 +150,7 @@ test('头锚包含「语言铁律 / 简体中文 / 不得用英文思考」', ()
 test('子智能体锚显式点名 subagent / AgentTeams / workflow / 后台任务', () => {
   const registry = makeRegistry();
   apply(makeCtx(registry), {});
-  const subagent = registry.sections.find((entry) => entry.name === 'lang-rule:subagent');
+  const subagent = registry.sections.find((entry) => entry.name === 'zh-yayan:subagent');
   for (const keyword of ['子智能体', 'AgentTeams', 'workflow', '后台任务', '全中文']) {
     assert(subagent.text.includes(keyword), `子智能体锚缺少关键词：${keyword}`);
   }
@@ -159,7 +159,7 @@ test('子智能体锚显式点名 subagent / AgentTeams / workflow / 后台任�
 test('尾锚含可判定硬约束：第一句 + 包含中文字符 + 不得以 ASCII 字母开头（v3）', () => {
   const registry = makeRegistry();
   apply(makeCtx(registry), {});
-  const tail = registry.sections.find((entry) => entry.name === 'lang-rule:tail');
+  const tail = registry.sections.find((entry) => entry.name === 'zh-yayan:tail');
   for (const keyword of ['第一句', '包含中文字符', '不得以 ASCII 字母开头', '正确示范']) {
     assert(tail.text.includes(keyword), `尾锚缺少关键词：${keyword}`);
   }
@@ -225,7 +225,7 @@ test('宿主 section 上界变大（20000）时尾锚自适应到 ≥21000', () 
     },
   });
   apply(makeCtx(registry), {});
-  const tail = registry.sections.find((entry) => entry.name === 'lang-rule:tail');
+  const tail = registry.sections.find((entry) => entry.name === 'zh-yayan:tail');
   assert(tail.order >= 21000, `尾锚 order 应 ≥21000，实际 ${tail.order}`);
 });
 
@@ -236,22 +236,22 @@ test('getSectionOrder 缺失或抛错时回退到 90050，不抛异常', () => {
     },
   });
   apply(makeCtx(registry), {});
-  const tail = registry.sections.find((entry) => entry.name === 'lang-rule:tail');
+  const tail = registry.sections.find((entry) => entry.name === 'zh-yayan:tail');
   assertEqual(tail.order, DEFAULT_TAIL_ORDER, '回退尾锚 order');
 });
 
 test('config.tailOrder / requestOrder 可覆盖', () => {
   const registry = makeRegistry();
   apply(makeCtx(registry), { tailOrder: 123456, requestOrder: 777 });
-  assertEqual(registry.sections.find((entry) => entry.name === 'lang-rule:tail').order, 123456, '覆盖尾锚 order');
+  assertEqual(registry.sections.find((entry) => entry.name === 'zh-yayan:tail').order, 123456, '覆盖尾锚 order');
   assertEqual(registry.contexts[0].order, 777, '覆盖 context order');
 });
 
 // ── 4. 配置化与 v1 向后兼容 ─────────────────────────────────────────
 test('v1 兼容键 text / order / sectionName 继续有效', () => {
   const registry = makeRegistry();
-  apply(makeCtx(registry), { text: '自定义铁律正文', order: -950, sectionName: 'my-lang-rule' });
-  const head = registry.sections.find((entry) => entry.name === 'my-lang-rule');
+  apply(makeCtx(registry), { text: '自定义铁律正文', order: -950, sectionName: 'my-custom-section' });
+  const head = registry.sections.find((entry) => entry.name === 'my-custom-section');
   assert(head !== undefined, 'v1 sectionName 键应生效');
   assertEqual(head.order, -950, 'v1 order 键应生效');
   assertEqual(head.text, '自定义铁律正文', 'v1 text 键应生效');
@@ -260,7 +260,7 @@ test('v1 兼容键 text / order / sectionName 继续有效', () => {
 test('headText / headOrder 覆盖 v2 键', () => {
   const registry = makeRegistry();
   apply(makeCtx(registry), { headText: 'v2 头锚', headOrder: -901 });
-  const head = registry.sections.find((entry) => entry.name === 'lang-rule');
+  const head = registry.sections.find((entry) => entry.name === 'zh-yayan');
   assertEqual(head.order, -901, 'headOrder');
   assertEqual(head.text, 'v2 头锚', 'headText');
 });
@@ -269,7 +269,7 @@ test('各锚可单独关闭：subagentEnabled / midEnabled / tailEnabled', () =>
   const registry = makeRegistry();
   apply(makeCtx(registry), { subagentEnabled: false, midEnabled: false, tailEnabled: false });
   assertEqual(registry.sections.length, 1, '只应剩头锚');
-  assertEqual(registry.sections[0].name, 'lang-rule', '剩余的是头锚');
+  assertEqual(registry.sections[0].name, 'zh-yayan', '剩余的是头锚');
   assertEqual(registry.contexts.length, 1, 'per-request 通道不受 section 开关影响');
 });
 
@@ -277,7 +277,7 @@ test('headEnabled=false 可单独关闭头锚，其余通道不受影响', () =>
   const registry = makeRegistry();
   apply(makeCtx(registry), { headEnabled: false });
   assertEqual(registry.sections.length, 3, '应剩子智能体/mid/尾三条');
-  assert(!registry.sections.some((entry) => entry.name === 'lang-rule'), '头锚不应注册');
+  assert(!registry.sections.some((entry) => entry.name === 'zh-yayan'), '头锚不应注册');
   assertEqual(registry.contexts.length, 1, 'per-request 通道仍注册');
 });
 
@@ -372,7 +372,7 @@ test('config 为 null / 非对象时不抛异常', () => {
 
 // ── 6. per-request 去重（与宿主 supersession 判据对齐） ────────────
 test('同一 step 固定文本只提交一次：3 个相同 step → 1 次 append', () => {
-  const sections = [{ name: 'lang-rule:request-tail', text: REQUEST_TEXT }];
+  const sections = [{ name: 'zh-yayan:request-tail', text: REQUEST_TEXT }];
   const same = () => sections.map((entry) => `${entry.name}\u0000${entry.text}`);
   const sequence = [same(), same(), same()];
   let retained;
@@ -440,7 +440,7 @@ test('D 层检测：runtime-context 快照（data 直接是消息体，无 messa
       source: {
         kind: 'runtime-context',
         form: 'snapshot',
-        sections: [{ name: 'lang-rule:request-tail', text: REQUEST_TEXT }],
+        sections: [{ name: 'zh-yayan:request-tail', text: REQUEST_TEXT }],
       },
       content: [{ type: 'text', text: `<system-reminder>\n${REQUEST_TEXT}\n</system-reminder>` }],
     },
@@ -449,7 +449,7 @@ test('D 层检测：runtime-context 快照（data 直接是消息体，无 messa
   assertEqual(evidence.found, true, '无 data.message 包装时也必须识别');
   assertEqual(evidence.via, 'user-system-reminder', '注入落地形态是 user 消息的 system-reminder');
   assertEqual(evidence.channel, 'runtime-context', '通道应记录 runtime-context');
-  assertEqual(evidence.sectionNameSeen, true, '应看到 lang-rule:request-tail section');
+  assertEqual(evidence.sectionNameSeen, true, '应看到 zh-yayan:request-tail section');
   assertEqual(evidence.container, 'user-message/system-reminder', '应标注 system-reminder 包裹');
 });
 
@@ -462,7 +462,7 @@ test('D 层检测：data.message.source 包装形态兼容（旧事件形状）'
       step: 1,
       message: {
         role: 'user',
-        source: { kind: 'runtime-context', form: 'snapshot', sections: [{ name: 'lang-rule:request-tail', text: REQUEST_TEXT }] },
+        source: { kind: 'runtime-context', form: 'snapshot', sections: [{ name: 'zh-yayan:request-tail', text: REQUEST_TEXT }] },
         content: [{ type: 'text', text: `<system-reminder>\n${REQUEST_TEXT}\n</system-reminder>` }],
       },
     },
@@ -743,7 +743,7 @@ test('v3.1 三档 preset：通道数与 token 预算', () => {
   const minimalRegistry = makeRegistry();
   apply(makeCtx(minimalRegistry), { preset: 'minimal' });
   const minimalNames = minimalRegistry.sections.map((entry) => entry.name);
-  assertEqual(JSON.stringify(minimalNames), JSON.stringify(['lang-rule:tail']), `minimal 应只注册尾锚：${minimalNames}`);
+  assertEqual(JSON.stringify(minimalNames), JSON.stringify(['zh-yayan:tail']), `minimal 应只注册尾锚：${minimalNames}`);
 });
 
 test('v3.1 preset 与 contextVariant 正交：可任意组合', () => {
@@ -772,7 +772,7 @@ test('v3.1 功能不缩水：minimal/standard 仍含可判定判据与 per-reque
     const text = typeof registry.contexts[0].text === 'function' ? registry.contexts[0].text() : registry.contexts[0].text;
     assert(/包含?中文字符/.test(text) || /含中文字符/.test(text), `${preset} 的 context 缺少可判定判据`);
     assert(text.includes('不得以 ASCII 字母开头'), `${preset} 的 context 缺少首字符判据`);
-    const tail = registry.sections.find((entry) => entry.name === 'lang-rule:tail');
+    const tail = registry.sections.find((entry) => entry.name === 'zh-yayan:tail');
     assert(tail !== undefined, `${preset} 必须保留尾锚`);
     assert(/包含?中文字符/.test(tail.text) || /含中文字符/.test(tail.text), `${preset} 的尾锚缺少可判定判据`);
   }
@@ -781,7 +781,7 @@ test('v3.1 功能不缩水：minimal/standard 仍含可判定判据与 per-reque
   apply(makeCtx(standardRegistry), { preset: 'standard' });
   assertEqual(standardRegistry.sections.length, 4, 'standard 的 system 四锚');
   assertEqual(standardRegistry.contexts.length, 1, 'standard 的 per-request 注入');
-  for (const name of ['lang-rule', 'lang-rule:subagent', 'lang-rule:mid', 'lang-rule:tail']) {
+  for (const name of ['zh-yayan', 'zh-yayan:subagent', 'zh-yayan:mid', 'zh-yayan:tail']) {
     assert(standardRegistry.sections.some((entry) => entry.name === name), `standard 缺少 ${name}`);
   }
 });
@@ -849,7 +849,7 @@ test('v3 长任务分组：>10000 字符或 >10 段单独统计', () => {
 });
 
 // ── 汇总 ────────────────────────────────────────────────────────────
-console.log(`\nlang-rule selftest：通过 ${passed} 项，失败 ${failures.length} 项`);
+console.log(`\nzh-yayan selftest：通过 ${passed} 项，失败 ${failures.length} 项`);
 if (failures.length > 0) {
   for (const failure of failures) console.error(`- ${failure.label}: ${failure.error?.stack ?? failure.error}`);
   process.exit(1);

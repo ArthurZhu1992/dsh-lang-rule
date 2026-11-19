@@ -26,7 +26,7 @@ export const REQUEST_TAIL_MARKERS = [
 ];
 
 /** 宿主 runtime context 快照里本插件 section 的注册名。 */
-export const REQUEST_TAIL_SECTION_NAME = 'lang-rule:request-tail';
+export const REQUEST_TAIL_SECTION_NAME = 'zh-yayan:request-tail';
 
 /** 解包事件里的消息体：兼容 `data.message` 与 `data` 两种形态。 */
 export function messageOf(event) {
@@ -48,7 +48,7 @@ export function messageText(message) {
     .join('\n');
 }
 
-/** 该消息是否登记了 lang-rule:request-tail 这个 runtime-context section。 */
+/** 该消息是否登记了 zh-yayan:request-tail 这个 runtime-context section。 */
 export function hasRequestTailSection(message) {
   const sections = message?.source?.sections;
   if (!Array.isArray(sections)) return false;

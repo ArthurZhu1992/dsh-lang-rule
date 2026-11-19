@@ -2,5 +2,5 @@
 # 之前靠 profile 的 cordis.patch.yml 手插，所以它不出现在「已安装插件」列表里。
 
 - insert:
-    - id: dsh-lang-rule
+    - id: dsh-zh-yayan
       name: dsh-zh-yayan

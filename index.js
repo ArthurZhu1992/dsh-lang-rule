@@ -1,5 +1,5 @@
 /**
- * dsh-lang-rule v3 — 部署级语言策略插件。
+ * dsh-zh-yayan v3 — 部署级语言策略插件。
  *
  * 目标（由全量语料审计 LANG-AUDIT 定位）：
  *   1. 首句是唯一强预测因子：首句英文 → 整段英文 81.1%，首句中文 → 1.1%；
@@ -39,7 +39,7 @@
  * config.enabled = false 时整插件不注册任何东西。
  */
 
-export const name = 'lang-rule';
+export const name = 'zh-yayan';
 
 /** 等 system-prompt 注册表就绪后再贡献锚点。 */
 export const inject = ['systemPrompt'];
@@ -405,7 +405,7 @@ export function apply(ctx, config = {}) {
       return true;
     } catch (error) {
       skipped.push({ kind: 'section', name: sectionName, reason: 'register-failed', error: String(error?.message ?? error) });
-      debug('[lang-rule] section 注册跳过', { name: sectionName, order });
+      debug('[zh-yayan] section 注册跳过', { name: sectionName, order });
       return false;
     }
   };
@@ -416,21 +416,21 @@ export function apply(ctx, config = {}) {
   const channels = new Set(preset.channels);
   const presetText = (key) => preset.texts[key];
 
-  const sectionName = pickText(settings.sectionName, 'lang-rule');
+  const sectionName = pickText(settings.sectionName, 'zh-yayan');
   const headOrder = finiteOr(settings.headOrder, finiteOr(settings.order, DEFAULT_HEAD_ORDER));
   const headText = pickText(settings.headText, pickText(settings.text, presetText('head') ?? HEAD_TEXT));
   if (channels.has('head') && settings.headEnabled !== false) addSection(sectionName, headOrder, headText);
 
   if (channels.has('subagent') && settings.subagentEnabled !== false) {
     const subagentOrder = finiteOr(settings.subagentOrder, DEFAULT_SUBAGENT_ORDER);
-    const subagentName = pickText(settings.subagentSectionName, 'lang-rule:subagent');
+    const subagentName = pickText(settings.subagentSectionName, 'zh-yayan:subagent');
     const subagentText = pickText(settings.subagentText, presetText('subagent') ?? SUBAGENT_TEXT);
     addSection(subagentName, subagentOrder, subagentText);
   }
 
   if (channels.has('mid') && settings.midEnabled !== false) {
     const midOrder = finiteOr(settings.midOrder, DEFAULT_MID_ORDER);
-    const midName = pickText(settings.midSectionName, 'lang-rule:mid');
+    const midName = pickText(settings.midSectionName, 'zh-yayan:mid');
     const midText = pickText(settings.midText, presetText('mid') ?? MID_TEXT);
     addSection(midName, midOrder, midText);
   }
@@ -444,7 +444,7 @@ export function apply(ctx, config = {}) {
     );
     // 宿主上界 + 1000 与 v1 既有值取大：既保证「排在宿主全部 section 之后」，又保持向后兼容。
     const tailOrder = finiteOr(settings.tailOrder, Math.max(DEFAULT_TAIL_ORDER, hostSectionMax + 1000));
-    const tailName = pickText(settings.tailSectionName, 'lang-rule:tail');
+    const tailName = pickText(settings.tailSectionName, 'zh-yayan:tail');
     const tailText = pickText(settings.tailText, presetText('tail') ?? TAIL_TEXT);
     addSection(tailName, tailOrder, tailText);
   }
@@ -456,7 +456,7 @@ export function apply(ctx, config = {}) {
   if (channels.has('context') && requestMode !== 'off' && requestMode !== false && settings.requestEnabled !== false) {
     const hostContextMax = probeHostOrder(registry, 'getContextOrder', 'WEB_SURFACE', HOST_CONTEXT_MAX_FALLBACK);
     const requestOrder = finiteOr(settings.requestOrder, Math.max(DEFAULT_REQUEST_ORDER, hostContextMax + 100));
-    const requestName = pickText(settings.requestSectionName, 'lang-rule:request-tail');
+    const requestName = pickText(settings.requestSectionName, 'zh-yayan:request-tail');
     const customRequestText = typeof settings.requestText === 'string' && settings.requestText.trim() !== '';
     const baseRequestText = presetText('request') ?? REQUEST_TEXT;
     const variants = presetText('requestVariants') ?? REQUEST_VARIANTS;
@@ -497,7 +497,7 @@ export function apply(ctx, config = {}) {
             else tracker.noteToolResult();
           });
         } catch {
-          debug('[lang-rule] session/event 监听不可用，变体退回时间窗计数');
+          debug('[zh-yayan] session/event 监听不可用，变体退回时间窗计数');
         }
       }
       requestText = (context) => trackerFor(context?.agent?.id ?? context?.scope?.id ?? null).text(context);
@@ -505,7 +505,7 @@ export function apply(ctx, config = {}) {
     if (typeof registry.context !== 'function') {
       // 旧宿主无 context() 通道：degraded 到「仅 system 锚」，不抛错、不阻断启动。
       skipped.push({ kind: 'context', name: requestName, reason: 'context-api-unavailable' });
-      debug('[lang-rule] 宿主无 systemPrompt.context()，per-request 通道降级', { name: requestName });
+      debug('[zh-yayan] 宿主无 systemPrompt.context()，per-request 通道降级', { name: requestName });
     } else if (typeof requestText === 'string' && requestText.trim() === '') {
       skipped.push({ kind: 'context', name: requestName, reason: 'empty-text' });
     } else {
@@ -526,7 +526,7 @@ export function apply(ctx, config = {}) {
         });
       } catch (error) {
         skipped.push({ kind: 'context', name: requestName, reason: 'register-failed', error: String(error?.message ?? error) });
-        debug('[lang-rule] context 注册跳过', { name: requestName, order: requestOrder });
+        debug('[zh-yayan] context 注册跳过', { name: requestName, order: requestOrder });
       }
     }
   }
@@ -534,7 +534,7 @@ export function apply(ctx, config = {}) {
   // 可观测：注册成功打印各 section 的 name 与 order；失败只在 debug 级说明。
   try {
     if (registered.length > 0) {
-      ctx?.logger?.info?.('[lang-rule] v3 已注册语言约束', {
+      ctx?.logger?.info?.('[zh-yayan] v3 已注册语言约束', {
         preset: presetName,
         channels: registered.map((entry) => `${entry.kind}:${entry.name}@${entry.order}`),
         requestTail: requestMode,
@@ -542,7 +542,7 @@ export function apply(ctx, config = {}) {
         degraded: !registered.some((entry) => entry.kind === 'context') && requestMode !== 'off',
       });
     }
-    if (skipped.length > 0) debug('[lang-rule] 部分通道未注册', { skipped });
+    if (skipped.length > 0) debug('[zh-yayan] 部分通道未注册', { skipped });
   } catch {
     /* 日志不可用不影响注入 */
   }

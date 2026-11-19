@@ -8,14 +8,16 @@
 
 ### Changed / 变更
 
-- **重命名**：包名 `dsh-lang-rule` → `dsh-zh-yayan`；运行时插件名（`export const name = "lang-rule"`）与全部 section 名（`lang-rule`、`lang-rule:subagent`、`lang-rule:mid`、`lang-rule:tail`、`lang-rule:request-tail`）保持不变，老配置的 `sectionName` / `tailSectionName` 继续有效。保留 section 名是为了让已部署配置与历史会话里的锚文本引用不失效；`cordis.patch.yml` 的 `id` 也保留 `dsh-lang-rule`，只改 `name`。
+- **重命名（全量）**：包名 `dsh-lang-rule` → `dsh-zh-yayan`，运行时标识一并改名——`export const name = 'zh-yayan'`，五个 section 名改为 `zh-yayan` / `zh-yayan:subagent` / `zh-yayan:mid` / `zh-yayan:tail` / `zh-yayan:request-tail`，`cordis.patch.yml` 的 `id` 与 `name` 均为 `dsh-zh-yayan`，工具链（verify-installed / lang-audit / measure-appends / measure-tool-variant）同步新名。
+- **迁移三步**（旧包与新包不能同时加载，否则会出现两套锚）：① `dsh plugin --profile <profile> remove dsh-lang-rule`；② `dsh plugin --profile <profile> add github:ArthurZhu1992/dsh-zh-yayan`；③ 重载/重启 DSH，并用 `verify-installed --strict` 确认只剩 `zh-yayan:request-tail`。显式写过旧 `sectionName` 系列的配置需改成 `zh-yayan*`。
 - README 首屏改版为「起笔即中文」定位：首屏直接给出三条可验证承诺（首句决定整段语言、覆盖全部 agent 角色、`verify-installed --strict` 一条命令自查），不再以版本号叙事开场。
 - 对外文案定稿（起笔即中文 / 一线到底 / 说得出就查得到）：市场条目与 README 首屏统一到这一主轴，作用域与可验证性在同一段里说清。
 - CHANGELOG 中一处完整会话 UUID 缩为 8 位前缀（`03d5a353`），与其余引用保持一致，避免把完整会话标识写进发布文档。
 
 ### English
 
-- **Rename**: package `dsh-lang-rule` -> `dsh-zh-yayan`; the runtime plugin name (`export const name = "lang-rule"`) and every section name stay unchanged, so existing `sectionName` / `tailSectionName` config keeps working. The bundle id in `cordis.patch.yml` also stays `dsh-lang-rule`; only `name` changes.
+- **Rename (full)**: package `dsh-lang-rule` -> `dsh-zh-yayan`; runtime identifiers change too — `export const name = 'zh-yayan'`, the five section names become `zh-yayan` / `zh-yayan:subagent` / `zh-yayan:mid` / `zh-yayan:tail` / `zh-yayan:request-tail`, `cordis.patch.yml` uses `dsh-zh-yayan` for both `id` and `name`, and the tooling matches the new names.
+- **Migration** (old and new packages must not load together, or two sets of anchors appear): remove `dsh-lang-rule`, add `github:ArthurZhu1992/dsh-zh-yayan`, then reload/restart and confirm with `verify-installed --strict`. Explicit old `sectionName*` config must switch to `zh-yayan*`.
 - README hero rewritten around "the first line lands in Chinese": three verifiable promises up front (first sentence decides the trace, every agent role covered, one-command self-check), with no version-number narrative.
 - Public copy finalized around "the first line lands in Chinese / all the way down / what it claims, you can verify"; the market entry and README hero now share one message.
 - One full session UUID in this file was shortened to its 8-character prefix (`03d5a353`) for consistency.

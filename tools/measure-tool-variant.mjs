@@ -14,13 +14,13 @@
  *
  * ⚠️ 复现 `2a6b3aee` 必须带 `--sessions-root` 指向隔离 DSH_HOME：
  *   node tools/measure-tool-variant.mjs --replay \
- *     --sessions-root work/lang-rule-tests/.runtime/dsh-home/sessions \
+ *     --sessions-root <harness-sessions-root>/.runtime/dsh-home/sessions \
  *     --session 2a6b3aee
  *   该会话只存在于隔离根；默认 `~/.dsh/sessions` 里没有它，会输出「未找到」。
  *   也可用环境变量 `DSH_SESSIONS_ROOT` 指定同一路径。
  *
  * 判定：对每个含 tool/result 的 step，检查**下一个 step** 的 runtime-context 里
- * `lang-rule:request-tail` 文本是否含「工具结果之后」；命中率 = 命中数 / 检测数。
+ * `zh-yayan:request-tail` 文本是否含「工具结果之后」；命中率 = 命中数 / 检测数。
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -115,7 +115,7 @@ function stepsOf(events) {
       const message = event.data?.message ?? event.data;
       const sections = message?.source?.sections;
       if (!Array.isArray(sections)) continue;
-      const tail = sections.find((section) => section?.name === 'lang-rule:request-tail');
+      const tail = sections.find((section) => section?.name === 'zh-yayan:request-tail');
       if (tail && typeof tail.text === 'string') current.tailTexts.push(tail.text);
     }
   }

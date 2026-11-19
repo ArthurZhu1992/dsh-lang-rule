@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * verify-installed — 检测当前 dsh profile 里 dsh-lang-rule 是否真的生效（只读）。
+ * verify-installed — 检测当前 dsh profile 里 dsh-zh-yayan 是否真的生效（只读）。
  *
  * 检查四层：
- *   A. 安装层：profile package.json 的 dependencies 与 dsh.profile.bundles 都引用了 dsh-lang-rule；
+ *   A. 安装层：profile package.json 的 dependencies 与 dsh.profile.bundles 都引用了 dsh-zh-yayan；
  *   B. 包层：插件目录存在 index.js / package.json / cordis.patch.yml，且版本与 v2 标记匹配；
  *   C. 注入层：最近会话的 system prompt 里能找到头锚与尾锚文本；
  *   D. 请求尾层：最近会话的 runtime-context 快照里能找到 per-request 约束（v2 新增，旧会话没有 → WARN）。
@@ -134,7 +134,7 @@ function resolvePluginDir(value) {
 const profileDir = path.join(HOME, 'profiles', PROFILE);
 const profilePackage = path.join(profileDir, 'package.json');
 let installedDir = null;
-let pluginDir = EXPLICIT_PLUGIN ? resolvePluginDir(EXPLICIT_PLUGIN) : path.join(HOME, 'plugins', 'dsh-lang-rule');
+let pluginDir = EXPLICIT_PLUGIN ? resolvePluginDir(EXPLICIT_PLUGIN) : path.join(HOME, 'plugins', 'dsh-zh-yayan');
 
 /** 显式 --plugin 检查本地包时，profile 未安装只是 WARN（不阻断对包本身的验证）。 */
 const recordProfile = (name, status, detail) => {
@@ -151,10 +151,10 @@ if (!fs.existsSync(profilePackage)) {
     recordProfile('profile package.json 可解析', 'FAIL', String(error.message));
   }
   if (pkg) {
-    const dep = pkg.dependencies?.['dsh-lang-rule'];
-    recordProfile('profile dependencies 引用 dsh-lang-rule', dep ? 'PASS' : 'FAIL', dep ?? '未找到');
+    const dep = pkg.dependencies?.['dsh-zh-yayan'];
+    recordProfile('profile dependencies 引用 dsh-zh-yayan', dep ? 'PASS' : 'FAIL', dep ?? '未找到');
     const bundles = pkg.dsh?.profile?.bundles ?? [];
-    recordProfile('profile bundles 启用 dsh-lang-rule', bundles.includes('dsh-lang-rule') ? 'PASS' : 'FAIL', `bundles=${bundles.length}`);
+    recordProfile('profile bundles 启用 dsh-zh-yayan', bundles.includes('dsh-zh-yayan') ? 'PASS' : 'FAIL', `bundles=${bundles.length}`);
     if (typeof dep === 'string' && dep.startsWith('file:')) {
       const resolved = path.resolve(profileDir, dep.slice('file:'.length));
       if (fs.existsSync(resolved)) installedDir = resolved;
@@ -188,8 +188,8 @@ record('插件版本', Number.parseInt(pluginVersion.split('.')[0], 10) >= 2 ? '
 
 if (fs.existsSync(indexFile)) {
   const source = fs.readFileSync(indexFile, 'utf8');
-  record('index.js 含 v2+ 标记（requestTail / lang-rule:request-tail）',
-    source.includes('requestTail') && source.includes('lang-rule:request-tail') ? 'PASS' : 'WARN',
+  record('index.js 含 v2+ 标记（requestTail / zh-yayan:request-tail）',
+    source.includes('requestTail') && source.includes('zh-yayan:request-tail') ? 'PASS' : 'WARN',
     '旧版 v1 仍可用，但没有 per-request 通道');
 }
 
@@ -256,7 +256,7 @@ if (dirs.length === 0) {
     `per-request 约束出现在会话里（${requestTailSeen}/${scanned} 个会话；v2 安装后新会话 ${newScanned} 个）`,
     requestStatus,
     requestTailSeen > 0
-      ? `语言约束请求尾通道已生效；来源 ${viaSummary}${requestTailDetails[0] ? `；样例 ${requestTailDetails[0].session} via=${requestTailDetails[0].via} channel=${requestTailDetails[0].channel ?? '?'} ${requestTailDetails[0].sectionNameSeen ? '命中 section=lang-rule:request-tail' : `marker=${requestTailDetails[0].marker}`}` : ''}`
+      ? `语言约束请求尾通道已生效；来源 ${viaSummary}${requestTailDetails[0] ? `；样例 ${requestTailDetails[0].session} via=${requestTailDetails[0].via} channel=${requestTailDetails[0].channel ?? '?'} ${requestTailDetails[0].sectionNameSeen ? '命中 section=zh-yayan:request-tail' : `未命中 section=zh-yayan:request-tail（期望新名），回退 marker=${requestTailDetails[0].marker}`}` : ''}`
       : !usingInstalled
         ? '当前检查的是未安装副本（--plugin），不做活体 FAIL 判定；装进 profile 后重跑'
         : newScanned > 0
@@ -265,7 +265,7 @@ if (dirs.length === 0) {
   );
   if (requestTailDetails.length > 0) {
     for (const detail of requestTailDetails) {
-      if (!JSON_OUT) console.log(`    · ${detail.session} via=${detail.via} channel=${detail.channel ?? '?'} container=${detail.container} seq=${detail.seq ?? '?'}${detail.sectionNameSeen ? ' section=lang-rule:request-tail' : ''} marker="${detail.marker ?? '-'}" ${detail.excerpt ?? ''}`);
+      if (!JSON_OUT) console.log(`    · ${detail.session} via=${detail.via} channel=${detail.channel ?? '?'} container=${detail.container} seq=${detail.seq ?? '?'}${detail.sectionNameSeen ? ' section=zh-yayan:request-tail' : ' section=(期望 zh-yayan:request-tail)'} marker="${detail.marker ?? '-'}" ${detail.excerpt ?? ''}`);
     }
   }
 }

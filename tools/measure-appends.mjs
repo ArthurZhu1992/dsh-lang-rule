@@ -125,7 +125,7 @@ function observe(events) {
     if (event?.type === 'user/message') {
       const message = event.data?.message ?? event.data;
       const sections = message?.source?.sections;
-      const isRequestTail = Array.isArray(sections) && sections.some((section) => section?.name === 'lang-rule:request-tail');
+      const isRequestTail = Array.isArray(sections) && sections.some((section) => section?.name === 'zh-yayan:request-tail');
       if (message?.source?.kind === 'runtime-context' && isRequestTail) appends += 1;
     }
   }

@@ -45,7 +45,7 @@ function projectSteps(steps) {
   return commits;
 }
 
-const snapshot = (text) => [`lang-rule:request-tail\u0000${text}`];
+const snapshot = (text) => [`zh-yayan:request-tail\u0000${text}`];
 
 test('per-request 去重：同一 step 固定文本只注入一次', () => {
   const one = snapshot(REQUEST_TEXT);
@@ -72,7 +72,7 @@ test('默认（requestTail 未配置）：注册且只注册一个 per-request c
   const registry = makeRegistry();
   apply({ systemPrompt: registry, logger: { info() {}, debug() {} } }, {});
   assert.equal(registry.contexts.length, 1, '默认启用 per-request 通道');
-  assert.equal(registry.contexts[0].name, 'lang-rule:request-tail');
+  assert.equal(registry.contexts[0].name, 'zh-yayan:request-tail');
   // v3：默认是 step 级变体 provider（函数），首个变体等于基础文本。
   assert.equal(typeof registry.contexts[0].text, 'function', 'v3 默认注册变体 provider');
   assert.equal(registry.contexts[0].text(), REQUEST_TEXT, '首个变体应等于基础文本');
@@ -102,10 +102,10 @@ test('section order：头 -900 / 子 -880 / mid 5100 / 尾 ≥90050 / context 50
   const registry = makeRegistry();
   apply({ systemPrompt: registry, logger: { info() {}, debug() {} } }, {});
   const orderOf = (name) => registry.sections.find((entry) => entry.name === name)?.order;
-  assert.equal(orderOf('lang-rule'), -900);
-  assert.equal(orderOf('lang-rule:subagent'), -880);
-  assert.equal(orderOf('lang-rule:mid'), 5100);
-  assert.ok(orderOf('lang-rule:tail') >= 90050, '尾锚 order 必须 ≥90050');
+  assert.equal(orderOf('zh-yayan'), -900);
+  assert.equal(orderOf('zh-yayan:subagent'), -880);
+  assert.equal(orderOf('zh-yayan:mid'), 5100);
+  assert.ok(orderOf('zh-yayan:tail') >= 90050, '尾锚 order 必须 ≥90050');
   assert.equal(registry.contexts[0].order, 500);
   assert.ok(registry.contexts[0].order > 210, 'context order 必须大于宿主 WEB_SURFACE(210)');
 });

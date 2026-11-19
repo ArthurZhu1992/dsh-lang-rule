@@ -9,7 +9,7 @@
 
 
 
-## v3 的依据：我们自己的实测（不是竞品文案）
+## 为什么需要它？我们自己的实测（不是竞品文案）
 
 | 证据 | 数值 | 它推翻的假设 |
 | --- | --- | --- |
@@ -27,7 +27,7 @@
 
 ---
 
-## 为什么首句比长度更重要（v1/v2 全量审计）
+## 为什么盯「第一句」？首句定生死的全量审计
 
 对 `~/.dsh/sessions` 下全部 280 个会话目录（264 个含 reasoning）做了全量审计，结论：
 
@@ -46,15 +46,15 @@
 
 ---
 
-## 五通道设计（v3：order 与 v2 完全一致，未新增通道）
+## 支持哪些 agent？五通道设计（order 与早期版本一致，未新增通道）
 
 | # | 通道 | order | 位置 | 作用 | 默认文本长度 |
 | --- | --- | --- | --- | --- | --- |
-| 1 | `section` `lang-rule` | **-900** | harness 身份段（-1000）之后、部署 persona（0）之前 | 长版铁律：定性「全程中文、不得用英文思考」 | ≈165 字符 |
-| 2 | `section` `lang-rule:subagent` | **-880** | 紧跟头锚 | 显式点名 subagent / AgentTeams 成员 / workflow 子智能体 / 后台任务 | ≈53 字符 |
-| 3 | `section` `lang-rule:mid` | **5100** | 工具 schema（TOOLS_SDK=5000）之后、结构化输出（9900）之前 | 工具文档后再重申一次可判定首句判据 | ≈106 字符 |
-| 4 | `section` `lang-rule:tail` | **90050** | 全部宿主 section 之后 | 尾部首句锚：第一句必须含中文字符、不得以 ASCII 字母开头 + 正确示范 | ≈51 字符 |
-| 5 | `context` `lang-rule:request-tail` | **500** | 宿主 context 上界（WEB_SURFACE=210）之后；每个 step 由宿主把 runtime-context 快照 append 在 claimed 消息之后 | **per-request 通道**：每请求重新渲染；模型看到的是宿主生成的 user 角色 `<system-reminder>` 快照，位于本 step 最后。**v3 起文本按 assembly（通常每 step 一次）在 3 个变体间轮换** | 73–137 字符（随变体） |
+| 1 | `section` `zh-yayan` | **-900** | harness 身份段（-1000）之后、部署 persona（0）之前 | 长版铁律：定性「全程中文、不得用英文思考」 | ≈165 字符 |
+| 2 | `section` `zh-yayan:subagent` | **-880** | 紧跟头锚 | 显式点名 subagent / AgentTeams 成员 / workflow 子智能体 / 后台任务 | ≈53 字符 |
+| 3 | `section` `zh-yayan:mid` | **5100** | 工具 schema（TOOLS_SDK=5000）之后、结构化输出（9900）之前 | 工具文档后再重申一次可判定首句判据 | ≈106 字符 |
+| 4 | `section` `zh-yayan:tail` | **90050** | 全部宿主 section 之后 | 尾部首句锚：第一句必须含中文字符、不得以 ASCII 字母开头 + 正确示范 | ≈51 字符 |
+| 5 | `context` `zh-yayan:request-tail` | **500** | 宿主 context 上界（WEB_SURFACE=210）之后；每个 step 由宿主把 runtime-context 快照 append 在 claimed 消息之后 | **per-request 通道**：每请求重新渲染；模型看到的是宿主生成的 user 角色 `<system-reminder>` 快照，位于本 step 最后。**v3 起文本按 assembly（通常每 step 一次）在 3 个变体间轮换** | 73–137 字符（随变体） |
 
 > 文本预算变更：请求尾从 v2 的 ≤80 字符放宽到 **≤150 字符**（v3 变体 1 实测 137 字符，多出的是可判定判据句与 few-shot）；`selftest.mjs` 对每个变体断言 ≤150。其余通道预算不变（头 ≤250 / 子 ≤60 / mid ≤150 / 尾 ≤80）。
 
@@ -94,7 +94,7 @@ const CONTEXT_ORDERS = { WORKING_DIRECTORY: 100, SANDBOX_POLICY: 110, APPROVAL_P
 成本结构分两层，**别混在一起算**：
 
 1. **system prompt 的四个 section**（head / subagent / mid / tail）每次请求都要发，但文本固定 → 命中 prompt cache 后边际成本接近 0；只有首次或缓存失效时全价。
-2. **per-request context**（`lang-rule:request-tail`）每次 append 在请求末尾，不在可复用前缀里 → 每次全价。这一层是真正需要控的。
+2. **per-request context**（`zh-yayan:request-tail`）每次 append 在请求末尾，不在可复用前缀里 → 每次全价。这一层是真正需要控的。
 
 估算口径：中文按 1 token/字（保守上界）、非中文按 4 字符≈1 token；区间给「中文 0.6–1 token/字」两端。`estimateTokens()` 导出同一口径，selftest 用它断言预算。
 
@@ -180,23 +180,23 @@ node tools/measure-appends.mjs --dry-run       # 不读会话，只跑 20 step �
 | `headEnabled` | `true` | 头锚开关 |
 | `headText` | 内置铁律 | 头锚正文（别名 `text`，v1 兼容） |
 | `headOrder` | `-900` | 头锚 order（别名 `order`，v1 兼容） |
-| `sectionName` | `lang-rule` | 头锚 section 名 |
+| `sectionName` | `zh-yayan` | 头锚 section 名 |
 | `subagentEnabled` | `true` | 子智能体锚开关 |
 | `subagentText` | 内置 | 子智能体锚正文 |
 | `subagentOrder` | `-880` | 子智能体锚 order |
-| `subagentSectionName` | `lang-rule:subagent` | 子智能体锚 section 名 |
+| `subagentSectionName` | `zh-yayan:subagent` | 子智能体锚 section 名 |
 | `midEnabled` | `true` | 工具文档后重申开关 |
-| `midText` / `midOrder` / `midSectionName` | 内置 / `5100` / `lang-rule:mid` | mid 锚 |
+| `midText` / `midOrder` / `midSectionName` | 内置 / `5100` / `zh-yayan:mid` | mid 锚 |
 | `tailEnabled` | `true` | 尾部首句锚开关 |
 | `tailText` | 候选 A 版 | 尾部锚正文（v1 兼容） |
 | `tailOrder` | `max(90050, 宿主上界+1000)` | 尾部锚 order（v1 兼容） |
-| `tailSectionName` | `lang-rule:tail` | 尾部锚 section 名（v1 兼容） |
+| `tailSectionName` | `zh-yayan:tail` | 尾部锚 section 名（v1 兼容） |
 | `requestTail` | `'context'` | per-request 通道：`'context'` 启用；**`'off'` 或 `false` 完全回到 v1 纯 section 行为**（回归对比用） |
 | `requestEnabled` | `true` | 与 `requestTail` 等价的布尔开关 |
 | `requestText` | 内置 | per-request 约束正文（显式设置后覆盖变体，回到固定文本） |
 | `contextVariant` | `'lazy'` | **1.0.0**：`'off'`（固定文本，只 append 一次，等同 v2 成本）/ `'lazy'`（默认，每 3 个 **step** 切换，约 1/3 成本）/ `'step'`（每 step 切换）。两者都接「工具结果后立即切换」。旧布尔兼容：`false`→`off`、`true`→`step` |
 | `requestOrder` | `max(500, 宿主 context 上界+100)` | per-request context order |
-| `requestSectionName` | `lang-rule:request-tail` | per-request context 名 |
+| `requestSectionName` | `zh-yayan:request-tail` | per-request context 名 |
 
 示例（profile 的 cordis 配置）：
 
@@ -251,12 +251,12 @@ node tools/measure-appends.mjs --dry-run       # 不读会话，只跑 20 step �
 注册成功时 `logger.info` 打印形如：
 
 ```
-[lang-rule] v3 已注册语言约束 { channels: ['section:lang-rule@-900', …, 'context:lang-rule:request-tail@500'], requestTail: 'context', contextVariant: true, degraded: false }
+[zh-yayan] v3 已注册语言约束 { channels: ['section:zh-yayan@-900', …, 'context:zh-yayan:request-tail@500'], requestTail: 'context', contextVariant: true, degraded: false }
 ```
 
 ### degraded 模式（旧宿主无 context API）
 
-**先说实测结论：desktop 上 v2 的 per-request 通道是生效的，不是降级状态。** 以 `03d5a353` 会话为样例（2026-11-19，桌面应用 + 开发期快照），宿主把本插件的 `lang-rule:request-tail` 渲染进一条 **user 角色的 `<system-reminder>` 快照**，正文逐字为 `【本步语言要求】第一句必须是简体中文；禁止以 Let me / Let's / I'll / We need to 开头；英文任务提示不豁免。`，`requestContextInUserMessage: true`。事件形状是 `event.type='user/message'`、`event.data.source.kind='runtime-context'`、`event.data.source.sections[]` 里含 `name='lang-rule:request-tail'`（`event.data` 的 key 是 `content/source/role/id`，**没有** `message` 字段）。
+**先说实测结论：desktop 上 v2 的 per-request 通道是生效的，不是降级状态。** 以 `03d5a353` 会话为样例（2026-11-19，桌面应用 + 开发期快照），宿主把本插件的 `zh-yayan:request-tail` 渲染进一条 **user 角色的 `<system-reminder>` 快照**，正文逐字为 `【本步语言要求】第一句必须是简体中文；禁止以 Let me / Let's / I'll / We need to 开头；英文任务提示不豁免。`，`requestContextInUserMessage: true`。事件形状是 `event.type='user/message'`、`event.data.source.kind='runtime-context'`、`event.data.source.sections[]` 里含 `name='zh-yayan:request-tail'`（`event.data` 的 key 是 `content/source/role/id`，**没有** `message` 字段）。
 
 之前「desktop 降级、无 request-tail」的记录是 `verify-installed` 检测脚本的**假阴性**：旧版只读 `event.data.message.source.kind`，把没有 `message` 包装的真实形态整个漏掉。现已修正为兼容两种形状，并接受「正文含判据词」作为兜底证据。
 
@@ -265,14 +265,14 @@ node tools/measure-appends.mjs --dry-run       # 不读会话，只跑 20 step �
 按 captain 裁决，**「agent 侧下一 step 注入」不作为 v2 交付项**（全局作用域拿不到 agent 实例、导入内部模块违反抗升级、user 消息绕开会破坏消息序列与 transcript）。因此旧宿主上的降级上限就是「仅 section 锚」，判定标准写死如下：
 
 - **触发条件**：`typeof ctx.systemPrompt.context !== 'function'`（宿主 `@deepseek-ai/dsh-system-prompt` 早于引入 `context()` 的版本），或部署显式设置 `requestTail: 'off' | false` / `requestEnabled: false`。
-- **表现**：只剩 4 个 section（头锚 `-900`、子智能体锚 `-880`、mid `5100`、尾部锚 `90050`），**没有 per-request runtime-context 尾注**；`logger.debug` 记录 `[lang-rule] 宿主无 systemPrompt.context()，per-request 通道降级 { name: 'lang-rule:request-tail' }` 与 `skipped: [{ kind: 'context', reason: 'context-api-unavailable' }]`；不抛错、不阻断 dsh 启动。
+- **表现**：只剩 4 个 section（头锚 `-900`、子智能体锚 `-880`、mid `5100`、尾部锚 `90050`），**没有 per-request runtime-context 尾注**；`logger.debug` 记录 `[zh-yayan] 宿主无 systemPrompt.context()，per-request 通道降级 { name: 'zh-yayan:request-tail' }` 与 `skipped: [{ kind: 'context', reason: 'context-api-unavailable' }]`；不抛错、不阻断 dsh 启动。
 - **如何自查**：`node tools/verify-installed.mjs --strict`（可加 `--session=<会话 id 片段>` 定向复算），看 `per-request 约束出现在会话里` 一项：
-  - `PASS` = 已找到证据；详情会写 `via=user-system-reminder channel=runtime-context 命中 section=lang-rule:request-tail`（或 `marker=…`），
+  - `PASS` = 已找到证据；详情会写 `via=user-system-reminder channel=runtime-context 命中 section=zh-yayan:request-tail`（或 `marker=…`），
     说明注入形态是宿主生成的 user `system-reminder` 快照，不是普通用户输入；
   - `WARN` = 最近扫描窗口内还没有 v2 安装后的新会话（不误判）；
   - `FAIL` = v2 已装进 profile，且安装后已产生新会话，但 0 条 context 证据 → 插件处于 degraded 或未生效，检查宿主版本与 `requestTail` 配置。
   - 若用 `--plugin` 指向未安装的工作副本，不做 FAIL 判定（避免误报），detail 会说明「当前检查的是未安装副本」。
-  - 证据检测兼容两种事件形状：`event.data.source`（真实 runtime-context 快照）与 `event.data.message.source`（旧形状）；命中 `lang-rule:request-tail` section 名或正文判据词任一即计入。
+  - 证据检测兼容两种事件形状：`event.data.source`（真实 runtime-context 快照）与 `event.data.message.source`（旧形状）；命中 `zh-yayan:request-tail` section 名或正文判据词任一即计入。
 
 ---
 
@@ -355,6 +355,25 @@ dsh plugin --profile <your-profile> add file:/absolute/path/to/dsh-zh-yayan
 dsh plugin --profile <your-profile> remove dsh-zh-yayan
 ```
 
+## 从 dsh-lang-rule 迁移
+
+运行时标识已一并改名（插件名与五个 section 名都从 `lang-rule*` 改为 `zh-yayan*`），旧包不能与新包同时加载——**同时加载会出现两套锚**（旧 `lang-rule*` 与新 `zh-yayan*` 各注册一遍，日志里能看到两组 section）。
+
+三步迁移：
+
+```bash
+# 1) 卸载旧包
+dsh plugin --profile <your-profile> remove dsh-lang-rule
+
+# 2) 安装新包
+dsh plugin --profile <your-profile> add github:ArthurZhu1992/dsh-zh-yayan
+
+# 3) 重载 profile 或重启 DSH，然后确认只剩新名
+node tools/verify-installed.mjs --strict   # 期望 PASS，详情出现 zh-yayan:request-tail
+```
+
+旧配置里若显式写过 `sectionName` / `tailSectionName` / `subagentSectionName` / `midSectionName` / `requestSectionName` 的旧值（`lang-rule*`），请改成 `zh-yayan*`，否则会按旧名注册。
+
 ---
 
 ## 已知限制
@@ -372,3 +391,12 @@ dsh plugin --profile <your-profile> remove dsh-zh-yayan
 
 - `docs/DESIGN.md` — 设计决策、order 推导、宿主源码定位、v3 判据换轨理由、审计数据来源
 - `tools/*.mjs`、`tools/lib/*.mjs` — 自检 / 单测 / 安装验证 / 语料复测 / 指标与证据检测纯函数
+
+
+---
+
+**Keywords / 关键词**
+
+中文思考 · 中文推理 · 思维链中文 · 简体中文 · 汉语 · 中文输出 · 英文思考修复 · 语言策略 · 子智能体中文 · 多智能体中文 · 团队中文 · 提示词中文约束
+
+reasoning in Chinese · thinking in Chinese · chain-of-thought in Chinese · Simplified Chinese · Mandarin · language policy · output language · system prompt · subagent · multi-agent · agent team · DeepSeek Harness · DSH plugin · Cordis
