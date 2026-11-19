@@ -11,7 +11,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { apply, requestTailNeedsCommit, REQUEST_TEXT, TAIL_TEXT } from '../index.js';
+import { apply, requestTailNeedsCommit, REQUEST_TEXT, FIRST_STEP_VARIANT, TAIL_TEXT } from '../index.js';
 
 /** 假注册表：记录 section/context 调用。 */
 function makeRegistry(overrides = {}) {
@@ -73,11 +73,18 @@ test('默认（requestTail 未配置）：注册且只注册一个 per-request c
   apply({ systemPrompt: registry, logger: { info() {}, debug() {} } }, {});
   assert.equal(registry.contexts.length, 1, '默认启用 per-request 通道');
   assert.equal(registry.contexts[0].name, 'zh-yayan:request-tail');
-  // v3：默认是 step 级变体 provider（函数），首个变体等于基础文本。
-  assert.equal(typeof registry.contexts[0].text, 'function', 'v3 默认注册变体 provider');
-  assert.equal(registry.contexts[0].text(), REQUEST_TEXT, '首个变体应等于基础文本');
+  // 默认是 step 级变体 provider（函数）；v1.1.0 起 step0 用 first-step 专用文本。
+  assert.equal(typeof registry.contexts[0].text, 'function', '默认注册变体 provider');
+  assert.equal(registry.contexts[0].text(), FIRST_STEP_VARIANT, 'v1.1.0 默认 step0 应是 first-step 变体');
   assert.equal(registry.contexts[0].interpolate, false);
   assert.equal(registry.contexts[0].required, true);
+});
+
+test('firstStepVariant=false：step0 回到基础文本（1.0.0 行为）', () => {
+  const registry = makeRegistry();
+  apply({ systemPrompt: registry, logger: { info() {}, debug() {} } }, { firstStepVariant: false });
+  assert.equal(typeof registry.contexts[0].text, 'function');
+  assert.equal(registry.contexts[0].text(), REQUEST_TEXT, '关闭后 step0 应等于基础文本');
 });
 
 test('requestTail=off 与默认模式都不得抛异常（含 logger 缺失）', () => {

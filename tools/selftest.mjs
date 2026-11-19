@@ -26,6 +26,7 @@ import {
   REQUEST_TEXT_COMPACT,
   REQUEST_VARIANTS,
   REQUEST_VARIANTS_COMPACT,
+  FIRST_STEP_VARIANT,
   FIRST_SENTENCE_CLAUSE,
   FIRST_SENTENCE_FEW_SHOT,
   ENGLISH_OPENER_HINTS,
@@ -170,7 +171,8 @@ test('尾锚含可判定硬约束：第一句 + 包含中文字符 + 不得以 A
 
 test('per-request context 含同一组可判定硬约束（v3）', () => {
   const registry = makeRegistry();
-  apply(makeCtx(registry), {});
+  // 关掉 first-step，确保测的是基础变体（first-step 的判据由 v1.1.0 用例覆盖）
+  apply(makeCtx(registry), { firstStepVariant: false });
   const request = registry.contexts[0];
   const text = typeof request.text === 'function' ? request.text() : request.text;
   for (const keyword of ['包含中文字符', '不得以 ASCII 字母开头']) {
@@ -399,7 +401,7 @@ test('requestTailNeedsCommit 语义：首次提交、相同跳过、变化重提
 test('context provider 输出稳定（变体确定性循环，无随机）', () => {
   const registry = makeRegistry();
   let clock = 0;
-  apply(makeCtx(registry), { contextVariant: 'step', now: () => clock });
+  apply(makeCtx(registry), { contextVariant: 'step', firstStepVariant: false, now: () => clock });
   const provider = registry.contexts[0].text;
   assertEqual(typeof provider, 'function', 'step 模式必须是函数型变体 provider');
   const context = { agent: { id: 'step-agent' }, signal: {} };
@@ -593,15 +595,15 @@ test('v3.1.1 工具结果后下一步立即切「工具结果之后」变体（�
   assertEqual(tracker.text({}), REQUEST_VARIANTS[1], '恢复轮换：step 3 → floor(3/3)=1');
 });
 
-test('v3.1.2 off/step：off 固定文本，step 每 step 切换', () => {
-  // off：字符串
+test('v3.1.2 off/step：off（严格）固定文本，step 每 step 切换', () => {
+  // off + 关闭 first-step：固定字符串（与 1.0.0/v2 一致）
   const offRegistry = makeRegistry();
-  apply(makeCtx(offRegistry), { contextVariant: 'off' });
-  assertEqual(typeof offRegistry.contexts[0].text, 'string', 'off 必须是固定字符串');
+  apply(makeCtx(offRegistry), { contextVariant: 'off', firstStepVariant: false });
+  assertEqual(typeof offRegistry.contexts[0].text, 'string', '严格 off 必须是固定字符串');
   // step：每 step 切换（同一 step 内多次调用保持同变体）
   const stepRegistry = makeRegistry();
   let clock = 0;
-  apply(makeCtx(stepRegistry), { contextVariant: 'step', now: () => clock });
+  apply(makeCtx(stepRegistry), { contextVariant: 'step', firstStepVariant: false, now: () => clock });
   const provider = stepRegistry.contexts[0].text;
   const context = { agent: { id: 'step-agent-2' }, signal: {} };
   const sequence = [];
@@ -689,10 +691,146 @@ test('v3.1.3 step 与 lazy 两态在工具结果后的行为一致', () => {
   }
 });
 
+// ── 9. v1.1.0：first-step 变体（针对 step0 的动作描述型英文起手） ─────────
+test('v1.1.0 first-step 文本：中文动作示范 + 四类禁起手 + 保留判据，长度 ≤180', () => {
+  assert(FIRST_STEP_VARIANT.includes('先读'), '缺少中文动作示范「先读」');
+  assert(FIRST_STEP_VARIANT.includes('The user wants'), '缺少禁用起手 The user wants');
+  assert(FIRST_STEP_VARIANT.includes('Need'), '缺少禁用起手 Need');
+  assert(FIRST_STEP_VARIANT.includes('I should'), '缺少禁用起手 I should');
+  assert(FIRST_STEP_VARIANT.includes('Let me'), '缺少禁用起手 Let me');
+  assert(FIRST_STEP_VARIANT.includes('中文字符'), '缺少既有判据「必须含中文字符」');
+  assert(FIRST_STEP_VARIANT.includes('ASCII'), '缺少既有判据「不得以 ASCII 字母开头」');
+  assert(FIRST_STEP_VARIANT.length <= 180, `first-step 文本长度 ${FIRST_STEP_VARIANT.length} 超过 180`);
+});
+
+test('v1.1.0 lazy/step 两态：step0 返回 first-step，step1 恢复轮换', () => {
+  for (const mode of ['lazy', 'step']) {
+    const tracker = createStepAwareVariantProvider({ mode, firstStepText: FIRST_STEP_VARIANT, now: () => 0 });
+    tracker.noteStepStart(); // step 0
+    assertEqual(tracker.text({}), FIRST_STEP_VARIANT, `${mode} 的 step0 应返回 first-step 变体`);
+    assertEqual(tracker.text({}), FIRST_STEP_VARIANT, `${mode} 的 step0 第二次调用仍是 first-step`);
+    tracker.noteStepStart(); // step 1
+    const step1 = tracker.text({});
+    const expected = mode === 'step' ? REQUEST_VARIANTS[1] : REQUEST_VARIANTS[0];
+    assertEqual(step1, expected, `${mode} 的 step1 应恢复轮换`);
+  }
+});
+
+test('v1.1.0 firstStepVariant=false 回退：step0 与 1.0.0 一致（基础变体）', () => {
+  const registry = makeRegistry();
+  apply(makeCtx(registry), { firstStepVariant: false, now: () => 0 });
+  const provider = registry.contexts[0].text;
+  assertEqual(provider({ agent: { id: 'ab-a' } }), REQUEST_TEXT, '关闭后 step0 必须是基础变体');
+});
+
+test('v1.1.0 默认启用：注册后的 step0 返回 first-step 变体', () => {
+  const registry = makeRegistry();
+  apply(makeCtx(registry), { now: () => 0 });
+  const provider = registry.contexts[0].text;
+  assertEqual(provider({ agent: { id: 'ab-b' } }), FIRST_STEP_VARIANT, '默认 step0 应返回 first-step 变体');
+});
+
+test('v1.1.0 first-step 只在 step0 注入一次，长任务不增加 per-step 开销', () => {
+  const tracker = createStepAwareVariantProvider({ mode: 'lazy', firstStepText: FIRST_STEP_VARIANT, now: () => 0 });
+  const seen = [];
+  for (let step = 0; step < 6; step += 1) {
+    tracker.noteStepStart();
+    seen.push(tracker.text({}));
+  }
+  assertEqual(seen.filter((text) => text === FIRST_STEP_VARIANT).length, 1, 'first-step 只应出现一次');
+  assertEqual(seen[0], FIRST_STEP_VARIANT, '第 0 步是 first-step');
+  assertEqual(seen[1], REQUEST_VARIANTS[0], '第 1 步恢复基础变体');
+  assertEqual(seen[3], REQUEST_VARIANTS[1], '第 3 步按 lazy 切到变体 2');
+});
+
+test('v1.1.0 off + first-step：step0 用 first-step，step1 起恒为 base（三种模式都生效）', () => {
+  const registry = makeRegistry();
+  let clock = 0;
+  apply(makeCtx(registry), { contextVariant: 'off', now: () => clock });
+  const provider = registry.contexts[0].text;
+  const context = { agent: { id: 'off-first-step' }, signal: {} };
+  assertEqual(provider(context), FIRST_STEP_VARIANT, 'off 模式 step0 也应是 first-step');
+  clock += 2000;
+  assertEqual(provider(context), REQUEST_TEXT, 'off 模式 step1 起固定为基础文本');
+  clock += 2000;
+  assertEqual(provider(context), REQUEST_TEXT, 'off 模式 step2 仍为基础文本');
+});
+
+// ── 10. v1.1.1：first-step 真实时序（preStep → step/start → refreshContext） ──
+test('v1.1.1 真实时序（带 step 号）：preStep → step/start(1) → refreshContext×3 全是 first-step', () => {
+  const tracker = createStepAwareVariantProvider({ mode: 'lazy', firstStepText: FIRST_STEP_VARIANT, now: () => 0 });
+  // 1) preStep assemble（事件之前；时间窗分支把 stepIndex 推到 0）
+  assertEqual(tracker.text({}), FIRST_STEP_VARIANT, 'preStep 返回 first-step');
+  // 2) step/start(step=1)
+  tracker.noteStepStart(1);
+  // 3) 同 step 内 refreshContext ×3 —— t59 里真正落盘的就是这几次调用
+  for (let call = 0; call < 3; call += 1) {
+    assertEqual(
+      tracker.text({}),
+      FIRST_STEP_VARIANT,
+      `同 step 的第 ${call + 1} 次 refreshContext 必须仍是 first-step（t61 根因）`,
+    );
+  }
+  // 4) step/start(2) 起恢复轮换
+  tracker.noteStepStart(2);
+  assertEqual(tracker.text({}), REQUEST_VARIANTS[0], 'step2 恢复基础变体');
+  tracker.noteStepStart(3);
+  assertEqual(tracker.text({}), REQUEST_VARIANTS[0], 'step3 仍属 lazy 第一段（floor(2/3)=0）');
+  tracker.noteStepStart(4);
+  assertEqual(tracker.text({}), REQUEST_VARIANTS[1], 'step4 按 lazy 切到变体 2（floor(3/3)=1）');
+});
+
+test('v1.1.1 无 step 号的事件模式：首个 step/start 只认领不推进，同 step 仍 first-step', () => {
+  const tracker = createStepAwareVariantProvider({ mode: 'lazy', firstStepText: FIRST_STEP_VARIANT, now: () => 0 });
+  tracker.text({}); // preStep
+  tracker.noteStepStart(); // 无 step 号
+  assertEqual(tracker.text({}), FIRST_STEP_VARIANT, '首个 step/start 后仍应是 first-step');
+  assertEqual(tracker.text({}), FIRST_STEP_VARIANT, '同 step 第二次仍是 first-step');
+  tracker.noteStepStart(); // 第二个 step
+  assertEqual(tracker.text({}), REQUEST_VARIANTS[0], '第二个 step 恢复基础变体');
+});
+
+test('v1.1.1 同一 step 的重复 step/start 不推进 stepIndex', () => {
+  const tracker = createStepAwareVariantProvider({ mode: 'lazy', firstStepText: FIRST_STEP_VARIANT, now: () => 0 });
+  tracker.text({});
+  tracker.noteStepStart(1);
+  tracker.noteStepStart(1); // 重复边界
+  tracker.noteStepStart(1);
+  assertEqual(tracker.text({}), FIRST_STEP_VARIANT, '重复 step/start 不应把 step 推进到 base');
+  tracker.noteStepStart(2);
+  assertEqual(tracker.text({}), REQUEST_VARIANTS[0], 'step2 才恢复基础变体');
+});
+
+test('v1.1.2 step0 内出现 tool/result 后仍返回 first-step（工具变体不得覆盖首步）', () => {
+  const tracker = createStepAwareVariantProvider({ mode: 'lazy', firstStepText: FIRST_STEP_VARIANT, now: () => 0 });
+  tracker.noteStepStart(1);
+  assertEqual(tracker.text({}), FIRST_STEP_VARIANT, 'step0 首次调用');
+  tracker.noteToolResult(); // mid 任务第一步就调工具
+  assertEqual(tracker.text({}), FIRST_STEP_VARIANT, 'step0 内 tool/result 后的调用仍须 first-step');
+  assertEqual(tracker.text({}), FIRST_STEP_VARIANT, 'step0 内继续调用仍 first-step');
+  // step1：工具结果优先（整段工具变体）
+  tracker.noteStepStart(2);
+  assertEqual(tracker.text({}), REQUEST_VARIANTS[TOOL_RESULT_VARIANT_INDEX], 'step1 起工具结果优先生效');
+  assertEqual(tracker.text({}), REQUEST_VARIANTS[TOOL_RESULT_VARIANT_INDEX], 'step1 第二次仍是工具变体');
+  // step2：恢复轮换
+  tracker.noteStepStart(3);
+  assertEqual(tracker.text({}), REQUEST_VARIANTS[0], 'step2 起恢复 lazy 轮换（floor(2/3)=0 → 基础变体）');
+});
+
+test('v1.1.2 step0 内 tool/result 后 refreshContext ×3 仍全为 first-step', () => {
+  const tracker = createStepAwareVariantProvider({ mode: 'lazy', firstStepText: FIRST_STEP_VARIANT, now: () => 0 });
+  tracker.text({}); // preStep assemble
+  tracker.noteStepStart(1);
+  tracker.noteToolResult(); // step0 内工具结果
+  for (let call = 0; call < 3; call += 1) {
+    assertEqual(tracker.text({}), FIRST_STEP_VARIANT, `step0 内 tool/result 后第 ${call + 1} 次 refreshContext`);
+  }
+});
+
 test('v3.1.1 lazy 按 agent 隔离：两个会话的 step 互不影响', () => {
   const registry = makeRegistry();
   let clock = 0;
-  apply(makeCtx(registry), { contextVariant: 'lazy', now: () => clock });
+  apply(makeCtx(registry), { contextVariant: 'lazy', firstStepVariant: false, now: () => clock });
   const provider = registry.contexts[0].text;
   const agentA = { agent: { id: 'agent-a' }, signal: {} };
   const agentB = { agent: { id: 'agent-b' }, signal: {} };
@@ -757,7 +895,8 @@ test('v3.1 preset 与 contextVariant 正交：可任意组合', () => {
   ];
   for (const [preset, variant] of combos) {
     const registry = makeRegistry();
-    apply(makeCtx(registry), { preset, contextVariant: variant });
+    // 关掉 first-step，保证 off 仍是固定字符串（first-step 与 off 组合另有专门用例）
+    apply(makeCtx(registry), { preset, contextVariant: variant, firstStepVariant: false });
     assert(registry.contexts.length === 1, `${preset}+${variant} 必须注册 context`);
     const isFunction = typeof registry.contexts[0].text === 'function';
     assertEqual(isFunction, variant !== 'off', `${preset}+${variant} 的 provider 形态（固定 vs 函数）`);
@@ -786,14 +925,15 @@ test('v3.1 功能不缩水：minimal/standard 仍含可判定判据与 per-reque
   }
 });
 
-test('v3 contextVariant 默认启用（注册函数型 provider），false 时回退固定文本', () => {
+test('v3 contextVariant 默认启用（注册函数型 provider），false+firstStepVariant=false 时回退固定文本', () => {
   const variantRegistry = makeRegistry();
   apply(makeCtx(variantRegistry), {});
   assertEqual(typeof variantRegistry.contexts[0].text, 'function', '默认应注册函数型变体 provider');
 
   const fixedRegistry = makeRegistry();
-  apply(makeCtx(fixedRegistry), { contextVariant: false });
-  assertEqual(typeof fixedRegistry.contexts[0].text, 'string', 'contextVariant=false 必须是固定文本');
+  // v1.1.0：off + first-step 默认也会注册函数（step0 专用文本）；严格固定需同时关 firstStepVariant。
+  apply(makeCtx(fixedRegistry), { contextVariant: false, firstStepVariant: false });
+  assertEqual(typeof fixedRegistry.contexts[0].text, 'string', 'contextVariant=false + firstStepVariant=false 必须是固定文本');
   assertEqual(fixedRegistry.contexts[0].text, REQUEST_TEXT, '固定文本应等于 REQUEST_TEXT');
 
   const customRegistry = makeRegistry();

@@ -1,7 +1,7 @@
 {
   "name": "dsh-zh-yayan",
-  "version": "1.0.0",
-  "description": "Deployment-level language policy: judgment-shaped first-sentence rule (Chinese character required, no ASCII first letter), Chinese few-shot, step-aware per-request context whose tool-result variant covers the whole next step, dual metrics, and three token presets, for every dsh agent including subagents.",
+  "version": "1.1.2",
+  "description": "Deployment-level language policy v1.1.2: decidable first-sentence rule, first-step variant for action-describing English openers, step-aware per-request context with tool-result priority, dual metrics, and three token presets, for every dsh agent including subagents.",
   "type": "module",
   "main": "index.js",
   "exports": {
@@ -35,7 +35,8 @@
     "verify": "node tools/verify-installed.mjs",
     "audit": "node tools/lang-audit.mjs",
     "measure": "node tools/measure-appends.mjs",
-    "measure-tool": "node tools/measure-tool-variant.mjs --simulate"
+    "measure-tool": "node tools/measure-tool-variant.mjs --simulate",
+    "firststep": "node tools/firststep-gate.mjs"
   },
   "keywords": [
     "dsh",

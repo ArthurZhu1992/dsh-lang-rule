@@ -118,6 +118,18 @@ export const REQUEST_VARIANTS = [
 /** 默认（contextVariant=off 时）使用的固定文本 = 基础变体。 */
 export const REQUEST_TEXT = REQUEST_VARIANTS[0];
 
+/**
+ * first-step 专用变体（v1.1.0）：只在 step 0（首次 assembly）注入一次。
+ *
+ * 为什么需要它：t56 把 mid 的失守点定位到 step0——3/56 的失败样本全是「读文件之前的动作描述」
+ * （`The user wants me to read…` / `Need read three files.` / `I should start by reading…`），
+ * 都发生在第一次 assembly；而「工具结果之后」变体要在 tool/result 之后才生效，结构上管不到 step0。
+ * 这条文本只做三件事：要求第一句先写**中文动作**并给示范、点名禁止这四类起手、保留既有判据。
+ * 长度 ≤180 字符；只在 step0 注入一次，不增加长任务的 per-step 开销。
+ */
+export const FIRST_STEP_VARIANT =
+  '【首步】第一句先写中文动作，例如「先读这三个文件」「先看这几处字段」；不得以 The user wants / Need / I should / Let me 开头；第一句必须含中文字符，不得以 ASCII 字母开头。';
+
 // ── v3.1：token 预算（三档 preset + 变体降频 + 成本估算） ──
 
 /**
@@ -250,6 +262,10 @@ export function createStepAwareVariantProvider(options = {}) {
   const now = options.now ?? (() => Date.now());
   const sameStepWindowMs = options.sameStepWindowMs ?? 1500;
   const toolVariant = variants[TOOL_RESULT_VARIANT_INDEX] ?? variants[variants.length - 1];
+  /** first-step 专用文本；null = 关闭（step0 走正常轮换，与 1.0.0 一致）。 */
+  const firstStepText = typeof options.firstStepText === 'string' && options.firstStepText.trim() !== ''
+    ? options.firstStepText
+    : null;
 
   let stepIndex = -1;
   let externalSteps = false;
@@ -259,6 +275,8 @@ export function createStepAwareVariantProvider(options = {}) {
   let pendingToolStep = false;
   /** 当前 step 整段使用工具变体（直到下一个 step 开始）。 */
   let toolStepActive = false;
+  /** 无 step 号的事件模式下，第一个 step/start 只「认领」不推进（见 noteStepStart）。 */
+  let firstStepSeen = false;
 
   /** 进入一个新 step：结束上一 step 的工具变体、激活待处理的工具变体、推进 step 计数。 */
   const beginStep = () => {
@@ -272,10 +290,51 @@ export function createStepAwareVariantProvider(options = {}) {
     lastSignal = null;
   };
 
+  /** 同一个 step 的重复边界：只做工具状态清理，不推进 step 计数。 */
+  const repeatStep = () => {
+    if (toolStepActive) toolStepActive = false;
+    if (pendingToolStep) {
+      pendingToolStep = false;
+      toolStepActive = true;
+    }
+    lastCallAt = null;
+    lastSignal = null;
+  };
+
   return {
-    /** 宿主事件：新 step 开始。调用后 text() 不再自行推进 step。 */
-    noteStepStart() {
+    /**
+     * 宿主事件：新 step 开始。
+     *
+     * t61 修复（first-step 不落盘）：宿主时序是 `preStep assemble`（首次 → stepIndex=0）
+     * 之后才发 `step/start`；旧的「每个 step/start 都 +1」会把首次 step 推到 1，
+     * 导致同 step 的 refreshContext 返回 base，first-step 只出现在不被持久化的 preStep 调用里。
+     *
+     * 现在：
+     *   - 事件带 1-based `step`（宿主 `step/start` 的 data.step）时，直接把 stepIndex 设为 step-1；
+     *     若与当前值相同则视为同一 step 的重复边界，不推进。
+     *   - 事件不带 step 号时，第一个 step/start 只认领、不推进（保持 0），让同 step 的
+     *     refreshContext 仍命中 first-step；之后按序推进。
+     * @param {number} [stepNumber] 1-based step 号（可选）
+     */
+    noteStepStart(stepNumber) {
       externalSteps = true;
+      const target = Number.isFinite(stepNumber) && stepNumber >= 1 ? stepNumber - 1 : null;
+      if (target !== null) {
+        if (target === stepIndex) {
+          repeatStep();
+          return;
+        }
+        stepIndex = target;
+        repeatStep();
+        return;
+      }
+      if (!firstStepSeen && stepIndex <= 0) {
+        firstStepSeen = true;
+        if (stepIndex < 0) stepIndex = 0;
+        repeatStep();
+        return;
+      }
+      firstStepSeen = true;
       beginStep();
     },
     /** 宿主事件：本 step 观察到工具结果 → 下一个 step 整段使用「工具结果之后」变体。 */
@@ -300,6 +359,9 @@ export function createStepAwareVariantProvider(options = {}) {
       }
       lastCallAt = at;
       lastSignal = signal;
+      // first-step 优先于一切（v1.1.2）：step0 内即使已经出现 tool/result（pendingToolStep 尚未
+      // 激活为 toolStepActive，或边界事件把 step 推错），也必须返回 first-step 并落盘。
+      if (firstStepText !== null && stepIndex === 0) return firstStepText;
       // 工具结果之后的整个 step 都用工具变体（不再只消费一次）。
       if (toolStepActive) return toolVariant;
       if (mode === 'step') return variants[Math.max(stepIndex, 0) % variants.length];
@@ -465,22 +527,34 @@ export function apply(ctx, config = {}) {
     // lazy（默认）→ 每 3 step 切换。
     // 两者共用 step 感知 tracker：都监听 step/start 精确计数、都接 tool/result 优先返回
     // 「工具结果之后」变体——保证「工具结果之后」在两种模式下都生效（t33 F1）。
+    // v1.1.0：first-step 变体在 step0 生效；firstStepVariant=false → null（回到 1.0.0 行为）。
+    const firstStepText = settings.firstStepVariant === false
+      ? null
+      : pickText(settings.firstStepText, presetText('firstStep') ?? FIRST_STEP_VARIANT);
     let requestText;
     if (customRequestText) {
       requestText = settings.requestText;
-    } else if (variantMode === 'off') {
+    } else if (variantMode === 'off' && firstStepText === null) {
+      // 严格 off：固定字符串，只 append 一次（与 1.0.0/v2 完全一致）。
       requestText = baseRequestText;
     } else {
+      // off + first-step 也走 tracker：step0 用 first-step，step1 起恒为 base（共 2 次 append，
+      // 仍远低于 lazy/step）。firstStepVariant=false 时不进入这里，保持严格一次 append。
+      const trackerVariants = variantMode === 'off' ? [baseRequestText] : variants;
+      const trackerMode = variantMode === 'off' ? 'lazy' : variantMode;
       // 每个 agent 一个 tracker：全局插件实例会同时服务多个会话，step 事件必须按 agent/session 隔离，
       // 否则 A 会话的 step 会推进 B 会话的变体。
       const trackers = new Map();
       // settings.now 是测试钩子（可注入假时钟）；生产不设置时用 Date.now()。
-      const trackerOptions = typeof settings.now === 'function' ? { now: settings.now } : {};
+      const trackerOptions = {
+        ...(typeof settings.now === 'function' ? { now: settings.now } : {}),
+        ...(firstStepText === null ? {} : { firstStepText }),
+      };
       const trackerFor = (key) => {
         const id = typeof key === 'string' && key !== '' ? key : 'global';
         let tracker = trackers.get(id);
         if (tracker === undefined) {
-          tracker = createStepAwareVariantProvider({ mode: variantMode, variants, ...trackerOptions });
+          tracker = createStepAwareVariantProvider({ mode: trackerMode, variants: trackerVariants, ...trackerOptions });
           trackers.set(id, tracker);
         }
         return tracker;
@@ -493,7 +567,7 @@ export function apply(ctx, config = {}) {
             if (event === null || typeof event !== 'object') return;
             if (event.type !== 'step/start' && event.type !== 'tool/result') return;
             const tracker = trackerFor(subject?.id ?? null);
-            if (event.type === 'step/start') tracker.noteStepStart();
+            if (event.type === 'step/start') tracker.noteStepStart(event.data?.step);
             else tracker.noteToolResult();
           });
         } catch {

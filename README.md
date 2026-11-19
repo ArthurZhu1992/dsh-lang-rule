@@ -108,6 +108,7 @@ const CONTEXT_ORDERS = { WORKING_DIRECTORY: 100, SANDBOX_POLICY: 110, APPROVAL_P
 | `TAIL_TEXT` | 51 | 31–51（点估 39） |
 | `REQUEST_TEXT`（full 变体 1） | 137 | 82–137（点估 86） |
 | `REQUEST_TEXT_COMPACT`（standard 变体 1） | 46 | 28–46（点估 34） |
+| `FIRST_STEP_VARIANT`（v1.1.0，仅 step0） | 110 | 44–110（点估 65） |
 
 ### 三档 preset
 
@@ -118,6 +119,10 @@ const CONTEXT_ORDERS = { WORKING_DIRECTORY: 100, SANDBOX_POLICY: 110, APPROVAL_P
 | `full`（默认） | 五通道（完整文本 + few-shot） | 157+55+106+51 + 137 = 506 | 232–352（点估 337） | ≤400 |
 
 > minimal 仍保留**可判定首句判据**与 **per-request 注入**（不是靠删功能省 token）；standard 的五通道与判据同样完整，只是把示例句与枚举提示压缩掉了。
+>
+> **v1.1.0 first-step**：step 0 的 request-tail 会替换为 `FIRST_STEP_VARIANT`（110 字符 / 点估 65 token），只发生一次；三档预算按「最坏情况」（step0 用完整变体）计算，因此 first-step 不会突破 125/181/337。`firstStepVariant: false` 时完全回到 1.0.0。
+>
+> 与 `off` 的组合：`contextVariant: off` + first-step（默认）会在 step0 用 first-step、step1 起固定 base → **共 2 次 append**（仍远低于 lazy 的约 7 次/20 step）。要严格「只 append 一次」的 v2 行为，需同时设 `firstStepVariant: false`。
 
 ### 变体策略与 20 step 成本
 
@@ -195,6 +200,8 @@ node tools/measure-appends.mjs --dry-run       # 不读会话，只跑 20 step �
 | `requestEnabled` | `true` | 与 `requestTail` 等价的布尔开关 |
 | `requestText` | 内置 | per-request 约束正文（显式设置后覆盖变体，回到固定文本） |
 | `contextVariant` | `'lazy'` | **1.0.0**：`'off'`（固定文本，只 append 一次，等同 v2 成本）/ `'lazy'`（默认，每 3 个 **step** 切换，约 1/3 成本）/ `'step'`（每 step 切换）。两者都接「工具结果后立即切换」。旧布尔兼容：`false`→`off`、`true`→`step` |
+| `firstStepVariant` | `true` | **v1.1.0**：step 0（首次 assembly）的 request-tail 改用 first-step 专用文本（要求第一句先写中文动作，禁 `The user wants`/`Need`/`I should`/`Let me` 起手）；`false` 完全回到 1.0.0 行为（A/B 与回滚）。只在 step0 注入一次，不增加长任务 per-step 开销 |
+| `firstStepText` | 内置 | 覆盖 first-step 文本（≤180 字符） |
 | `requestOrder` | `max(500, 宿主 context 上界+100)` | per-request context order |
 | `requestSectionName` | `zh-yayan:request-tail` | per-request context 名 |
 

@@ -4,6 +4,49 @@
 
 **1.0.0 是本仓库的市场首发版本。** 开发期曾打过 2.x / 3.x 快照 tag（一天内多次迭代），它们从未对外发布，对应的 tag 与 Release 已删除归档；旧 commit 仍保留在 git 历史中，本文件以附录形式保留其记录。对外只认 1.0.0 及之后的正式版本。
 
+## [1.1.2] — 2026-11-19
+
+> 定位：新增 **first-step 变体**（step0 专用），并修复它在真实会话里的落盘时序与验证脚本漏判。五通道 order（`-900` / `-880` / `5100` / `90050` / `500`）、五个 section 名、判据文本、三档预算（125 / 181 / 337）均未变。
+
+### Added / 新增
+
+- **first-step 变体（`FIRST_STEP_VARIANT`，110 字符 / 约 65 token）**：只注入在 **step0**——`【首步】第一句先写中文动作，例如「先读这三个文件」「先看这几处字段」；不得以 The user wants / Need / I should / Let me 开头；第一句必须含中文字符，不得以 ASCII 字母开头。`。针对第一轮实际失守的**动作描述型英文起手**（首句英文 → 整段英文），在第一次 assembly 就给一条可执行的中文动作示范。
+- **开关**：`config.firstStepVariant`（默认 `true`）；`firstStepVariant: false` 时 step0 回到 1.0.0 行为（等同 `REQUEST_TEXT`）；`config.firstStepText` 可覆盖文本。
+- **与 `contextVariant` 的组合**：`lazy` / `step` 都经过 tracker；`off` + first-step 也经过 tracker（step0 用 first-step、step1 起恒为 base，共 2 次 append）；只有 `off` + `firstStepVariant: false` 才是严格单次固定文本。
+
+- **First-step variant** (`FIRST_STEP_VARIANT`, 110 chars / ~65 tokens), injected only at **step 0**, telling the model to open with a Chinese action ("先读这三个文件"), and naming the forbidden English openers (`The user wants / Need / I should / Let me`).
+- **Switches**: `firstStepVariant` (default true) and `firstStepText` (override); `firstStepVariant: false` restores the 1.0.0 behaviour.
+- **Combination with `contextVariant`**: `lazy` / `step` both use the tracker; `off` + first-step appends twice (first-step then base); only `off` + `firstStepVariant: false` is a single fixed string.
+
+### Fixed / 修复
+
+- **first-step 在真实会话里没有落盘**：宿主时序是 `preStep assemble`（stepIndex=0 → 返回 first-step）→ `step/start` → 同 step 的 `refreshContext()` 又覆盖为轮换文本；且 `toolStepActive` 的判定排在 first-step 之前。修法：first-step 判定**前移**到工具变体之前，step0 内即使出现 `tool/result` 仍返回 first-step；`noteStepStart(stepNumber)` 认领 1-based `step/start` 的 `data.step`（无 step 号时首个事件只认领不推进），step1 起恢复 `lazy = floor(step/3) % 3` / `step = step % 3`。
+- **验证脚本漏判**：`tools/mid84-verdict.mjs` 之前用 `MARKER = '【本步语言要求'` 过滤 user/message，而 first-step 文本是「【首步】…」不含该 marker，会被跳过并回落到工具变体，得出假阴性。现改为从 `message.source.sections` 取 `name` 匹配 `/request-tail$/` 的 section 文本，取「第一个 `step/start` 之后的第一条 request-tail」，与 `tools/firststep-gate.mjs` 同口径。
+- 新增 `tools/firststep-gate.mjs`：直接解压会话文件，只看 step0 落盘原文（不读 provider 返回值/preStep 日志）。
+
+- **First-step was not persisted in real sessions**: `preStep assemble` returned it at step 0, then the same step's `refreshContext()` overwrote it, and the `toolStepActive` branch ran before the first-step branch. Fixed by moving the first-step check ahead of the tool variant and by claiming step numbers via `noteStepStart(stepNumber)`.
+- **Verifier false negative**: `mid84-verdict.mjs` filtered user messages by a marker that the first-step text does not contain; it now reads the `request-tail` section from `message.source.sections`, same rule as the new `tools/firststep-gate.mjs`.
+
+### Verified / 实测（t67，真实数据）
+
+- 隔离 DSH_HOME，`--plugin=work/dsh-lang-rule`（跑前断言被测 index.js sha256[:16]=`734228802233e1f3`），**84 条 mid probe** → mid 80 / short 4 / long 0，84/84 独立会话，failures 0。
+- **mid 首句英文 0/80 = 0%**，Wilson 双侧 **`[0, 4.6%]`**（单侧上界 3.7%）→ **达到 <5% 目标**。
+- 与 1.0.0（3/56 = 5.4%，`[1.8%, 14.6%]`）**区间重叠**，因此**不写「显著改善」**；达标依据是「上界 ≤ 5%」，与区间重叠并不矛盾。
+- **first-step 落盘**：`mid84-verdict` 核 80/80、`firststep-gate` 核 84/84，两口径 100% 一致；残留英文样本 0 条（上一轮的动作描述型/省主语型未复现）。
+- 历史语料无回归：英文主导 62（不变）、中文主导 76.2%（−0.3pp）；static 层 42 PASS / 0 FAIL。
+- 成本：**1,423 token/条**（1.0.0 为 1,535，−7%）；first-step 只在 step0 注入一次。
+- **批次作废说明**：t59（first-step 未生效，且存在会话串号）与 t63（证据文件的 mtime 早于修复提交，且验证脚本 marker 过滤造成假阴性）两批均**不作基线**；唯一有效基线是 1.0.0 的 3/56 = 5.4%（`[1.8%, 14.6%]`）。
+
+- 84 isolated mid probes with the tested version pinned by sha256; **first-sentence English 0/80 = 0%**, Wilson `[0, 4.6%]` (one-sided upper 3.7%) → the <5% target is met. The interval overlaps 1.0.0's, so no "significant improvement" is claimed.
+- First-step was persisted 80/80 (harness) and 84/84 (gate); no residual English samples; corpus unchanged (62 English-dominated, 76.2% Chinese); 1,423 tokens per probe.
+- **Batch exclusions**: t59 (first-step inactive, plus session mix-ups) and t63 (evidence file mtimes older than the fix, plus a marker-filter false negative) are not used as baselines; the only valid baseline is 1.0.0's 3/56 = 5.4% (`[1.8%, 14.6%]`).
+
+### Compatibility / 兼容性
+
+- `firstStepVariant: false` 回退 1.0.0 行为；`contextVariant` 三态与旧布尔映射不变；v1/v2 配置键继续有效。
+
+- `firstStepVariant: false` restores 1.0.0 behaviour; `contextVariant` modes and legacy booleans are unchanged.
+
 ## [1.0.0] — 2026-11-19
 
 ### Added / 新增

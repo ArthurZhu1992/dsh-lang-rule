@@ -1,6 +1,60 @@
-# Release Notes — dsh-lang-rule
+# Release Notes — dsh-zh-yayan
 
-> **对外版本只看 1.0.0。** 本文件是开发期快照记录（2.x / 3.x），从未对外发布；对应 tag 与 Release 已删除归档，旧 commit 仍在 git 历史中。1.0.0 的完整变更见 [CHANGELOG.md](./CHANGELOG.md)，版本规则见 [VERSIONING.md](./VERSIONING.md)。
+> **命名说明（2026-11-19 起）**：本文件 3.1.x / 3.0.0 / 2.0.0 段里的 `lang-rule:*` 是**当时的真实 section 名**，作为历史如实保留；
+> 自改名为 `dsh-zh-yayan` 起，运行时标识统一为 `zh-yayan*`：
+> `zh-yayan` / `zh-yayan:subagent` / `zh-yayan:mid` / `zh-yayan:tail` / `zh-yayan:request-tail`。
+> 发布仓库的 `CHANGELOG.md` 1.0.0 段同理——其中的 `lang-rule:*` 是改名前的历史名，不是当前标识。
+
+
+## 1.1.2 — 2026-11-19
+
+### 加固：first-step 判定前移到工具变体之前（第三次同类型修复）
+
+- `tracker.text()` 中 `stepIndex === 0 && firstStepText` 的判定**前移到 `toolStepActive` 之前**：step0 内即使已经出现 tool/result，也不得被「工具结果之后」变体覆盖。step1 起工具优先与轮换逻辑不变。
+- 新增 `tools/firststep-gate.mjs`：**只读落盘的 `user/message` 原文**（不读 provider 返回值/preStep 日志），取 step0（第一个 `step/start` 之后）的第一条 request-tail，断言含「【首步】」+「先读」+四类禁起手清单；结果落盘 `out/firststep-gate.json`。
+
+### 证据澄清（避免重复第三轮同类修复）
+
+- t63 判「0/5 落盘」所用的 5 条会话（`636ea62f` 等）文件时间是 **22:27**，早于 t61 修复提交（约 22:50）；它们实测的仍是修复前行为，不能作为 t61 无效的证据。
+- t61 之后产生的会话（如 `23247d2e`、`502b6d89`、`3ba34e7f`，22:52）的 step0 落盘原文已是「【首步】」。
+- `tools/mid84-verdict.mjs` 的 firstStep 核对用 `MARKER = '【本步语言要求'` 过滤 user/message；**`【首步】` 文本不含该 marker**，会被跳过并回落到下一条（工具变体）→ 得出假阴性。建议其 firstStep 核对改为「step0 内第一条 request-tail，不按 marker 过滤」（本插件侧已在 `firststep-gate.mjs` 采用该口径）。
+
+### 前置门（本任务验收）
+
+- 修完跑 `--layer=live --count=5 --batch --types=mid`（隔离 DSH_HOME），5 条会话的 step0 落盘原文 **5/5** 含「【首步】」+ 四类禁起手（`out/firststep-gate.json`，pass=true）。
+- 不变量未变：五通道 order、判据文本、三档预算 125/181/337、零 import、`firstStepVariant=false` 回退。
+
+## 1.1.1 — 2026-11-19
+
+### 修复：first-step 未落盘（preStep vs step/start 时序）
+
+- **现象（t59）**：first-step 变体在真实会话里 0/57 落盘——假 ctx 的 selftest 过，真实宿主不过。
+- **根因**：宿主时序是 `preStep assemble`（首次 → stepIndex=0，返回 first-step）→ `step/start` 触发 `noteStepStart()` → 旧实现无条件 `stepIndex += 1` → 推到 1；该 step 后续 `refreshContext()` 返回基础变体，而落盘的正是后者。first-step 只出现在不被持久化的 preStep 调用里。
+- **修复**（`noteStepStart(stepNumber)`）：
+  1. 事件带 1-based `step`（`step/start` 的 `data.step`）时，直接把 `stepIndex` 设为 `step-1`；与当前值相同则视为同一 step 的重复边界，不推进。
+  2. 事件不带 step 号时，第一个 `step/start` 只认领、不推进，让同 step 的 `refreshContext` 仍命中 first-step；之后按序推进。
+- **验证**：selftest 新增 3 条时序用例（真实时序 preStep→step/start(1)→refreshContext×3、无 step 号模式、重复边界不推进），62/62 通过；真实 probe 3 条 mid，step0 落盘文本 3/3 为 first-step（含「【首步】」与禁起手清单）。
+- **不变**：lazy/step 轮换、工具结果优先、`firstStepVariant=false` 回退、五通道 order、判据文本、三档预算 125/181/337、零 import。
+
+## 1.1.0 — 2026-11-19
+
+### 新增：first-step 变体（针对 step0 的动作描述型英文起手）
+
+- **问题定位（t56）**：mid 的失守点集中在 step 0——3/56 失败样本全部是「读文件之前的动作描述」：
+  `The user wants me to read three specific files…` / `Need read three files.` / `I should start by reading…`。
+  1.0.0 的「工具结果之后」变体在 tool/result 之后才生效，**结构上管不到 step0**。
+- **修复**：新增 `FIRST_STEP_VARIANT`（110 字符，点估 65 token），只在 step 0（首次 assembly）注入一次：
+  - 要求第一句先写**中文动作**（示范「先读这三个文件」「先看这几处字段」）；
+  - 点名禁止 `The user wants` / `Need` / `I should` / `Let me` 起手；
+  - 保留既有判据（必须含中文字符、不得以 ASCII 字母开头）。
+- **不改变轮换**：step 1+ 恢复 `lazy = floor(step/3)%3`、`step = step%3`；工具结果优先（整个下一个 step 用变体 3）照旧。
+- **可关闭**：`config.firstStepVariant = false` 完全回到 1.0.0 行为（A/B 与回滚）；`firstStepText` 可覆盖文本。
+- **与 off 组合**：`contextVariant: off` + first-step 默认时，step0 用 first-step、step1 起固定 base（共 2 次 append）；要严格「只 append 一次」的 v2 行为需同时设 `firstStepVariant: false`。
+- **成本**：只在 step0 注入一次，不增加长任务 per-step 开销；三档预算（125/181/337）不变。
+
+### 不变
+
+- 五通道 order（-900/-880/5100/90050/500）、四个既有 section 名、判据文本、三档 preset 预算、零内部 import。
 
 ## 3.1.3 — 2026-11-19
 
