@@ -73,7 +73,9 @@ test('默认（requestTail 未配置）：注册且只注册一个 per-request c
   apply({ systemPrompt: registry, logger: { info() {}, debug() {} } }, {});
   assert.equal(registry.contexts.length, 1, '默认启用 per-request 通道');
   assert.equal(registry.contexts[0].name, 'lang-rule:request-tail');
-  assert.equal(registry.contexts[0].text, REQUEST_TEXT);
+  // v3：默认是 step 级变体 provider（函数），首个变体等于基础文本。
+  assert.equal(typeof registry.contexts[0].text, 'function', 'v3 默认注册变体 provider');
+  assert.equal(registry.contexts[0].text(), REQUEST_TEXT, '首个变体应等于基础文本');
   assert.equal(registry.contexts[0].interpolate, false);
   assert.equal(registry.contexts[0].required, true);
 });

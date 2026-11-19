@@ -1,0 +1,62 @@
+name: publish-consistency
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  consistency:
+    name: tag == package == changelog, tag commit == main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.15'
+
+      - name: Tag / package / CHANGELOG must agree
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          PKG_TAG="v${PKG_VERSION}"
+          echo "tag=$TAG package=v$PKG_VERSION"
+
+          if [ "$TAG" != "$PKG_TAG" ]; then
+            echo "::error::tag $TAG does not match package version $PKG_TAG"
+            exit 1
+          fi
+
+          FIRST_CHANGELOG="$(grep -m1 -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' CHANGELOG.md | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)"
+          echo "changelog first section=$FIRST_CHANGELOG"
+          if [ "$FIRST_CHANGELOG" != "$PKG_VERSION" ]; then
+            echo "::error::CHANGELOG first section ($FIRST_CHANGELOG) does not match package version ($PKG_VERSION)"
+            exit 1
+          fi
+
+          git fetch --no-tags origin main
+          TAG_SHA="$(git rev-parse "${TAG}^{commit}")"
+          MAIN_SHA="$(git rev-parse origin/main)"
+          echo "tag commit=$TAG_SHA origin/main=$MAIN_SHA"
+          if [ "$TAG_SHA" != "$MAIN_SHA" ]; then
+            echo "::error::tag commit $TAG_SHA differs from origin/main $MAIN_SHA (tag drift)"
+            exit 1
+          fi
+
+          # The tag tree must carry the same bytes as the checked-out main tree.
+          git diff --exit-code "${TAG}" origin/main -- . ':!CHANGELOG.md' >/dev/null || {
+            echo "::error::tag tree differs from origin/main (excluding CHANGELOG.md documentation follow-ups)"
+            exit 1
+          }
+
+          echo "OK: $TAG == package == CHANGELOG first section, tag commit == origin/main"

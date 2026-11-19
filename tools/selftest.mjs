@@ -16,11 +16,24 @@
 import {
   apply,
   HEAD_TEXT,
+  HEAD_TEXT_COMPACT,
   SUBAGENT_TEXT,
   MID_TEXT,
+  MID_TEXT_COMPACT,
   TAIL_TEXT,
   TAIL_CANDIDATES,
   REQUEST_TEXT,
+  REQUEST_TEXT_COMPACT,
+  REQUEST_VARIANTS,
+  REQUEST_VARIANTS_COMPACT,
+  FIRST_SENTENCE_CLAUSE,
+  FIRST_SENTENCE_FEW_SHOT,
+  ENGLISH_OPENER_HINTS,
+  PRESETS,
+  DEFAULT_PRESET,
+  estimateTokens,
+  normalizeContextVariant,
+  createRequestVariantProvider,
   DEFAULT_HEAD_ORDER,
   DEFAULT_SUBAGENT_ORDER,
   DEFAULT_MID_ORDER,
@@ -31,6 +44,7 @@ import {
   requestTailNeedsCommit,
 } from '../index.js';
 import { detectRequestTailEvidence } from './lib/request-tail-detect.mjs';
+import { firstSentenceLanguage, cjkRatio, segmentMetrics, summarizeLongTasks } from './lib/lang-metrics.mjs';
 
 let passed = 0;
 const failures = [];
@@ -140,11 +154,11 @@ test('子智能体锚显式点名 subagent / AgentTeams / workflow / 后台任�
   }
 });
 
-test('尾锚含可判定硬约束：第一句=简体中文 + Let me/Let\'s/I\'ll/We need to + 英文提示不豁免', () => {
+test('尾锚含可判定硬约束：第一句 + 包含中文字符 + 不得以 ASCII 字母开头（v3）', () => {
   const registry = makeRegistry();
   apply(makeCtx(registry), {});
   const tail = registry.sections.find((entry) => entry.name === 'lang-rule:tail');
-  for (const keyword of ['第一句', '简体中文', 'Let me', "Let's", "I'll", 'We need to', '起手', '英文', '不豁免']) {
+  for (const keyword of ['第一句', '包含中文字符', '不得以 ASCII 字母开头', '正确示范']) {
     assert(tail.text.includes(keyword), `尾锚缺少关键词：${keyword}`);
   }
   // 反向断言：不得出现「第一个字符」这种不可判定口径（首字符常是 ** 或反引号）。
@@ -152,36 +166,53 @@ test('尾锚含可判定硬约束：第一句=简体中文 + Let me/Let\'s/I\'ll
   assert(!/如果|若|假如|除非/.test(tail.text), '尾锚不得包含条件从句');
 });
 
-test('per-request context 含同一组可判定硬约束', () => {
+test('per-request context 含同一组可判定硬约束（v3）', () => {
   const registry = makeRegistry();
   apply(makeCtx(registry), {});
   const request = registry.contexts[0];
-  for (const keyword of ['第一句', '简体中文', 'Let me', "Let's", "I'll", 'We need to', '英文']) {
-    assert(request.text.includes(keyword), `请求尾 context 缺少关键词：${keyword}`);
+  const text = typeof request.text === 'function' ? request.text() : request.text;
+  for (const keyword of ['包含中文字符', '不得以 ASCII 字母开头']) {
+    assert(text.includes(keyword), `请求尾 context 缺少关键词：${keyword}`);
   }
+  assert(text.includes('The user wants') && text.includes('The task:'), '请求尾辅助提示必须覆盖实测漏网起手');
   assertEqual(request.required, true, 'context 必须 required（部署关闭 runtime context 时依然生效）');
   assertEqual(request.interpolate, false, 'context 不得做 {{variable}} 插值');
 });
 
-test('默认尾锚是候选 A 版，且候选表至少 3 版', () => {
+test('默认尾锚是候选 A 版，且候选表至少 3 版（v3 可判定判据）', () => {
   assertEqual(TAIL_TEXT, TAIL_CANDIDATES.A, '默认尾锚必须是 A 版');
   assert(Object.keys(TAIL_CANDIDATES).length >= 3, '候选文本至少 3 版');
   for (const [key, text] of Object.entries(TAIL_CANDIDATES)) {
-    assert(text.includes('Let me') && text.includes('第一句'), `候选 ${key} 缺少判据词`);
+    assert(text.includes('第一句'), `候选 ${key} 缺少「第一句」`);
+    assert(/含中文字符|包含中文字符|汉字/.test(text), `候选 ${key} 缺少可判定判据`);
   }
 });
 
-test('长度预算：头 ≤250 / 子 ≤60 / mid ≤150 / 尾 ≤80 / 请求尾 ≤80 字符', () => {
+test('长度预算：HEAD ≤160 / SUBAGENT ≤60 / MID ≤110 / TAIL ≤60 / REQUEST ≤140 字符', () => {
   const budgets = [
-    ['HEAD_TEXT', HEAD_TEXT, 250],
+    ['HEAD_TEXT', HEAD_TEXT, 160],
+    ['HEAD_TEXT_COMPACT', HEAD_TEXT_COMPACT, 160],
     ['SUBAGENT_TEXT', SUBAGENT_TEXT, 60],
-    ['MID_TEXT', MID_TEXT, 150],
-    ['TAIL_TEXT', TAIL_TEXT, 80],
-    ['REQUEST_TEXT', REQUEST_TEXT, 80],
+    ['MID_TEXT', MID_TEXT, 110],
+    ['MID_TEXT_COMPACT', MID_TEXT_COMPACT, 110],
+    ['TAIL_TEXT', TAIL_TEXT, 60],
+    ['REQUEST_TEXT', REQUEST_TEXT, 140],
+    ['REQUEST_TEXT_COMPACT', REQUEST_TEXT_COMPACT, 140],
   ];
   for (const [label, text, limit] of budgets) {
     assert(text.length <= limit, `${label} 长度 ${text.length} 超过预算 ${limit}`);
   }
+  for (const [label, variants, limit] of [
+    ['REQUEST_VARIANTS', REQUEST_VARIANTS, 140],
+    ['REQUEST_VARIANTS_COMPACT', REQUEST_VARIANTS_COMPACT, 140],
+  ]) {
+    for (const variant of variants) {
+      assert(variant.length <= limit, `${label} 变体长度 ${variant.length} 超过 ${limit}`);
+    }
+  }
+  // few-shot 总长预算（v3 起 ≤60）
+  const fewShotTotal = FIRST_SENTENCE_FEW_SHOT.reduce((sum, text) => sum + text.length, 0);
+  assert(fewShotTotal <= 60, `few-shot 总长 ${fewShotTotal} 超过 60`);
 });
 
 // ── 3. order 推导可解释、可覆盖 ─────────────────────────────────────
@@ -363,10 +394,14 @@ test('requestTailNeedsCommit 语义：首次提交、相同跳过、变化重提
   assertEqual(requestTailNeedsCommit(undefined, []), false, '从未注入且无内容');
 });
 
-test('context 文本固定（静态字符串，无 provider 函数）以保证缓存友好', () => {
+test('context provider 输出稳定（变体确定性循环，无随机）', () => {
   const registry = makeRegistry();
-  apply(makeCtx(registry), {});
-  assertEqual(typeof registry.contexts[0].text, 'string', 'context.text 必须是静态字符串');
+  apply(makeCtx(registry), { contextVariant: 'step' });
+  const provider = registry.contexts[0].text;
+  assertEqual(typeof provider, 'function', 'step 模式必须是函数型变体 provider');
+  const sequence = [provider(), provider(), provider(), provider()];
+  assertEqual(new Set(sequence.slice(0, 3)).size, 3, 'step 模式前三次应给出 3 个不同变体');
+  assertEqual(sequence[3], sequence[0], '第 4 次应确定性地回到第 1 个变体（无随机）');
   assertEqual(typeof registry.sections[3].text, 'string', '尾锚 text 必须是静态字符串');
 });
 
@@ -438,6 +473,199 @@ test('D 层检测：无判据词的普通 user 消息不误报', () => {
   ];
   const evidence = detectRequestTailEvidence(events);
   assertEqual(evidence.found, false, '普通 user 消息与 system 文本都不算 per-request 证据');
+});
+
+// ── 8. v3：可判定判据 / few-shot / step 级变体 / 两指标拆分 ─────────────
+test('v3 判据可判定：要求「包含中文字符」且「不得以 ASCII 字母开头」', () => {
+  for (const text of [REQUEST_TEXT, FIRST_SENTENCE_CLAUSE, TAIL_TEXT, MID_TEXT]) {
+    assert(text.includes('包含中文字符'), `缺少可判定判据「包含中文字符」：${text.slice(0, 40)}`);
+    assert(text.includes('不得以 ASCII 字母开头') || text.includes('不得是 ASCII 字母'), `缺少「不得以 ASCII 字母开头」：${text.slice(0, 40)}`);
+  }
+});
+
+test('v3 黑名单降级为辅助提示，并标注枚举不完备', () => {
+  assert(ENGLISH_OPENER_HINTS.includes('辅助提示'), '黑名单必须标注为辅助提示');
+  assert(ENGLISH_OPENER_HINTS.includes('不完备'), '必须写明枚举永远不完备');
+  assert(ENGLISH_OPENER_HINTS.includes('The user wants'), '必须覆盖实测漏网的 The user wants');
+  assert(ENGLISH_OPENER_HINTS.includes('The task:'), '必须覆盖实测漏网的 The task:');
+  // 黑名单不再是唯一判据：REQUEST_TEXT 里判据句必须在黑名单之前出现。
+  const clauseIndex = REQUEST_TEXT.indexOf('包含中文字符');
+  const blacklistIndex = REQUEST_TEXT.indexOf('辅助提示');
+  assert(clauseIndex >= 0 && blacklistIndex > clauseIndex, '可判定判据必须排在黑名单之前');
+});
+
+test('v3 few-shot：2 个中文正确示范，总长 ≤60 字符，无英文示例', () => {
+  assertEqual(FIRST_SENTENCE_FEW_SHOT.length, 2, '必须有 2 个示范');
+  const total = FIRST_SENTENCE_FEW_SHOT.reduce((sum, text) => sum + text.length, 0);
+  assert(total <= 60, `few-shot 总长 ${total} 超过 60`);
+  for (const text of FIRST_SENTENCE_FEW_SHOT) {
+    assert(text.startsWith('正确示范：'), `示范必须以「正确示范：」开头：${text}`);
+    assert(/[\u4e00-\u9fff]/.test(text), `示范必须含中文：${text}`);
+    assert(!/^(Let me|Let's|I'll|We need to|The user)/.test(text.replace('正确示范：', '')), `示范必须以中文起手：${text}`);
+  }
+});
+
+test('v3 step 变体按调用序轮换，第 4 次回到第 1 个', () => {
+  assertEqual(REQUEST_VARIANTS.length, 3, '必须有 3 个变体');
+  const provider = createRequestVariantProvider('step');
+  const seen = [provider(), provider(), provider()];
+  assertEqual(new Set(seen).size, 3, 'step 模式前三次调用必须给出 3 个不同变体');
+  assertEqual(provider(), seen[0], '第 4 次应回到第 1 个变体');
+  for (const variant of REQUEST_VARIANTS) {
+    assert(variant.includes('包含中文字符') || variant.includes('含中文字符'), `变体缺少可判定判据：${variant.slice(0, 30)}`);
+  }
+});
+
+test('v3.1 lazy 变体：12 步只在第 1/4/7/10 次切换（默认模式）', () => {
+  const provider = createRequestVariantProvider('lazy');
+  const sequence = Array.from({ length: 12 }, () => provider());
+  const indexes = sequence.map((text) => REQUEST_VARIANTS.indexOf(text));
+  assertEqual(JSON.stringify(indexes), JSON.stringify([0, 0, 0, 1, 1, 1, 2, 2, 2, 0, 0, 0]), `lazy 序列不符：${indexes}`);
+  // 切换点 = 第 1、4、7、10 次调用（index 0/3/6/9 的值变化）
+  const switches = indexes.map((value, index) => (index > 0 && value !== indexes[index - 1] ? index + 1 : null)).filter(Boolean);
+  assertEqual(JSON.stringify(switches), JSON.stringify([4, 7, 10]), `切换点不符：${switches}`);
+  // 成本对比：lazy 在 12 步里只产生 3 次新快照，step 产生 12 次。
+  const stepProvider = createRequestVariantProvider('step');
+  const stepIndexes = Array.from({ length: 12 }, () => stepProvider()).map((text) => REQUEST_VARIANTS.indexOf(text));
+  const distinctRuns = (list) => list.filter((value, index) => index === 0 || value !== list[index - 1]).length;
+  assertEqual(distinctRuns(indexes), 4, 'lazy 12 步应有 4 段（3 次切换）');
+  assertEqual(distinctRuns(stepIndexes), 12, 'step 12 步每步都变');
+});
+
+test('v3.1 normalizeContextVariant：off/step/lazy 三态与旧布尔兼容', () => {
+  assertEqual(normalizeContextVariant(false), 'off', 'false → off');
+  assertEqual(normalizeContextVariant('off'), 'off', "'off' → off");
+  assertEqual(normalizeContextVariant(true), 'step', 'true → step（v3.0.0 行为）');
+  assertEqual(normalizeContextVariant('step'), 'step', "'step' → step");
+  assertEqual(normalizeContextVariant('lazy'), 'lazy', "'lazy' → lazy");
+  assertEqual(normalizeContextVariant(undefined), 'lazy', '未设置 → lazy（v3.1 新默认）');
+  assertEqual(normalizeContextVariant('bogus'), 'lazy', '非法值 → lazy');
+});
+
+test('v3.1 三档 preset：通道数与 token 预算', () => {
+  assertEqual(DEFAULT_PRESET, 'full', '默认档必须是 full（与 v3.0.0 行为一致）');
+  const expectations = {
+    minimal: { sections: 1, contexts: 1, budget: 130 },
+    standard: { sections: 4, contexts: 1, budget: 300 },
+    full: { sections: 4, contexts: 1, budget: 400 },
+  };
+  for (const [name, expected] of Object.entries(expectations)) {
+    const registry = makeRegistry();
+    apply(makeCtx(registry), { preset: name });
+    assertEqual(registry.sections.length, expected.sections, `${name} 的 section 数`);
+    assertEqual(registry.contexts.length, expected.contexts, `${name} 的 context 数`);
+    // token 估算 = 实际注册文本之和（context 取基础文本）。
+    const parts = PRESETS[name].channels.map((channel) => (channel === 'context' ? PRESETS[name].texts.request : PRESETS[name].texts[channel]));
+    const total = parts.reduce((sum, text) => sum + estimateTokens(text), 0);
+    assert(total <= expected.budget, `${name} token 估算 ${total} 超过预算 ${expected.budget}`);
+  }
+  // minimal 只有 tail + context：不注册 head/subagent/mid。
+  const minimalRegistry = makeRegistry();
+  apply(makeCtx(minimalRegistry), { preset: 'minimal' });
+  const minimalNames = minimalRegistry.sections.map((entry) => entry.name);
+  assertEqual(JSON.stringify(minimalNames), JSON.stringify(['lang-rule:tail']), `minimal 应只注册尾锚：${minimalNames}`);
+});
+
+test('v3.1 preset 与 contextVariant 正交：可任意组合', () => {
+  const combos = [
+    ['minimal', 'off'],
+    ['minimal', 'lazy'],
+    ['standard', 'step'],
+    ['standard', 'off'],
+    ['full', 'lazy'],
+    ['full', 'step'],
+  ];
+  for (const [preset, variant] of combos) {
+    const registry = makeRegistry();
+    apply(makeCtx(registry), { preset, contextVariant: variant });
+    assert(registry.contexts.length === 1, `${preset}+${variant} 必须注册 context`);
+    const isFunction = typeof registry.contexts[0].text === 'function';
+    assertEqual(isFunction, variant !== 'off', `${preset}+${variant} 的 provider 形态（固定 vs 函数）`);
+  }
+});
+
+test('v3.1 功能不缩水：minimal/standard 仍含可判定判据与 per-request 注入', () => {
+  for (const preset of ['minimal', 'standard']) {
+    const registry = makeRegistry();
+    apply(makeCtx(registry), { preset });
+    assertEqual(registry.contexts.length, 1, `${preset} 必须有 per-request 注入`);
+    const text = typeof registry.contexts[0].text === 'function' ? registry.contexts[0].text() : registry.contexts[0].text;
+    assert(/包含?中文字符/.test(text) || /含中文字符/.test(text), `${preset} 的 context 缺少可判定判据`);
+    assert(text.includes('不得以 ASCII 字母开头'), `${preset} 的 context 缺少首字符判据`);
+    const tail = registry.sections.find((entry) => entry.name === 'lang-rule:tail');
+    assert(tail !== undefined, `${preset} 必须保留尾锚`);
+    assert(/包含?中文字符/.test(tail.text) || /含中文字符/.test(tail.text), `${preset} 的尾锚缺少可判定判据`);
+  }
+  // standard 仍覆盖五通道
+  const standardRegistry = makeRegistry();
+  apply(makeCtx(standardRegistry), { preset: 'standard' });
+  assertEqual(standardRegistry.sections.length, 4, 'standard 的 system 四锚');
+  assertEqual(standardRegistry.contexts.length, 1, 'standard 的 per-request 注入');
+  for (const name of ['lang-rule', 'lang-rule:subagent', 'lang-rule:mid', 'lang-rule:tail']) {
+    assert(standardRegistry.sections.some((entry) => entry.name === name), `standard 缺少 ${name}`);
+  }
+});
+
+test('v3 contextVariant 默认启用（注册函数型 provider），false 时回退固定文本', () => {
+  const variantRegistry = makeRegistry();
+  apply(makeCtx(variantRegistry), {});
+  assertEqual(typeof variantRegistry.contexts[0].text, 'function', '默认应注册函数型变体 provider');
+
+  const fixedRegistry = makeRegistry();
+  apply(makeCtx(fixedRegistry), { contextVariant: false });
+  assertEqual(typeof fixedRegistry.contexts[0].text, 'string', 'contextVariant=false 必须是固定文本');
+  assertEqual(fixedRegistry.contexts[0].text, REQUEST_TEXT, '固定文本应等于 REQUEST_TEXT');
+
+  const customRegistry = makeRegistry();
+  apply(makeCtx(customRegistry), { requestText: '自定义尾约束' });
+  assertEqual(customRegistry.contexts[0].text, '自定义尾约束', '显式 requestText 必须是固定文本');
+});
+
+test('v3 指标拆分：首句语言与整段 CJK 占比分别计算（首句中文 ≠ 整段中文）', () => {
+  // 构造：首句中文，其后大量英文 —— 正是实测里「首句中文但 CJK 0.222」的形状。
+  const text = `先确认工作区结构，再改代码。Here is a long English body that keeps going for many words and never returns to Chinese at all.`;
+  const metrics = segmentMetrics(text);
+  assertEqual(metrics.firstLanguage, 'zh', '首句应判为中文');
+  assertEqual(metrics.firstSentenceIsZh, true, '首句指标独立记录');
+  assert(metrics.cjkRatio < 0.2, `整段 CJK 比应低于 0.2，实际 ${metrics.cjkRatio}`);
+  assertEqual(metrics.bodyIsZhDominant, false, '整段指标应判为非中文主导（与首句指标分离）');
+  assertEqual(firstSentenceLanguage('The user wants a summary.'), 'en', '英文起手仍能被判为英文首句');
+});
+
+test('v3 判据实现锚文本第二条：ASCII 字母开头一律判英文（含混合起手）', () => {
+  // 反例：ASCII 字母开头 + 后面有汉字，旧实现会误判 zh。
+  assertEqual(firstSentenceLanguage('OK 我先确认工作区结构。'), 'en', 'OK 开头应判 en');
+  assertEqual(firstSentenceLanguage('Sure 这一步先读文件。'), 'en', 'Sure 开头应判 en');
+  assertEqual(segmentMetrics('OK 我先确认工作区结构。').firstSentenceIsZh, false, 'segmentMetrics 必须复用同一判据');
+  // 四种实测英文起手（不依赖黑名单）。
+  for (const text of [
+    'The task: describe in four bullets what changed.',
+    'Here is a quick summary of the changes.',
+    'I will first inspect the workspace, then patch it.',
+    'First, let me check the repository layout.',
+  ]) {
+    assertEqual(firstSentenceLanguage(text), 'en', `应判英文：${text}`);
+  }
+  // 中文正例（含 Markdown 装饰）。
+  assertEqual(firstSentenceLanguage('先确认工作区结构，再改代码。'), 'zh', '纯中文首句');
+  assertEqual(firstSentenceLanguage('**先读文件，再判断。**'), 'zh', '去装饰后以中文起手');
+  // 装饰符本身不是 ASCII 字母，不应误判。
+  assertEqual(firstSentenceLanguage('**OK 我先确认。**'), 'en', '去装饰后仍是 ASCII 开头');
+});
+
+test('v3 长任务分组：>10000 字符或 >10 段单独统计', () => {
+  const long = { segments: 21, chars: 63443, cjkRatio: 0.15, firstLanguage: 'zh' };
+  const short = { segments: 1, chars: 406, cjkRatio: 0.91, firstLanguage: 'zh' };
+  const summary = summarizeLongTasks([long, short]);
+  assertEqual(summary.long.sessions, 1, '长任务应单独计 1 个');
+  assertEqual(summary.short.sessions, 1, '短任务 1 个');
+  assertEqual(summary.long.bodyEnDominant, 1, '长任务整段英文主导应被单独计数');
+  assertEqual(summary.long.firstSentenceEn, 0, '长任务首句英文单独计数');
+  assertEqual(summary.threshold.chars, 10000, '字符阈值');
+  assertEqual(summary.threshold.segments, 10, '段数阈值');
+  // 阈值是「任一超过」，不是「同时超过」。
+  assertEqual(summarizeLongTasks([{ segments: 11, chars: 100, cjkRatio: 0.5, firstLanguage: 'zh' }]).long.sessions, 1, '仅段数超阈值也算长任务');
+  assertEqual(summarizeLongTasks([{ segments: 1, chars: 10001, cjkRatio: 0.5, firstLanguage: 'zh' }]).long.sessions, 1, '仅字符数超阈值也算长任务');
 });
 
 // ── 汇总 ────────────────────────────────────────────────────────────

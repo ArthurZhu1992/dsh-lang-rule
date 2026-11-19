@@ -3,6 +3,69 @@
 本文件记录 dsh-lang-rule 的重要变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 All notable changes to this project are documented here, in the spirit of Keep a Changelog and Semantic Versioning. Each entry is written once in Chinese and once in English.
 
+## [3.1.0] — 2026-11-19
+
+> 定位：token 预算可配置、可度量；判据与通道零改动（`index.js` 变化仅为文本常量与 preset 分支，五通道 order 仍 `-900` / `-880` / `5100` / `90050` / `500`）。
+
+### Added / 新增
+
+- **三档 preset**（`config.preset`，默认 `full`）：
+
+  | 档 | 通道 | 字符 | token 点估 | 预算 |
+  | --- | --- | --- | --- | --- |
+  | `minimal` | tail + context | 188 | 125 | ≤130 |
+  | `standard` | 五通道（紧凑文本，无 few-shot） | 240 | 181 | ≤300 |
+  | `full`（默认） | 五通道（完整文本 + few-shot） | 506 | 337 | ≤400 |
+
+- **变体三态**（`config.contextVariant`，默认 `lazy`）：`off` 固定文本（只 append 一次，等同 v2 成本）；`lazy` 每 3 次 assembly 切换（实测 12 步序列 `0,0,0,1,1,1,2,2,2,0,0,0`）；`step` 每次切换（v3.0.0 行为）。旧布尔兼容：`false → off`、`true → step`。
+- **20 step 成本对比**（full 档，context 点估 86）：v2 固定 ≈86 token → v3 lazy ≈602（7 次）→ v3 step ≈1720（20 次）；standard+lazy ≈238、minimal+lazy ≈602。
+- **selftest 45 项**：新增三档预算、lazy 序列、三态归一化、正交组合、功能不缩水、长度预算六组断言。
+
+- **Three presets** (`config.preset`, default `full`): `minimal` 125 tokens (≤130), `standard` 181 (≤300), `full` 337 (≤400), measured with `estimateTokens`.
+- **Three variant modes** (`config.contextVariant`, default `lazy`): `off` / `lazy` (switch every third assembly) / `step` (switch every assembly). Legacy booleans map `false → off`, `true → step`.
+- **Cost for 20 steps** (full, context ≈86 tokens): v2 fixed ≈86, v3 lazy ≈602 (7 appends), v3 step ≈1720 (20 appends); standard+lazy ≈238, minimal+lazy ≈602.
+- **selftest now 45 assertions**, including preset budgets, lazy sequence, normalization, orthogonal combinations, feature parity, and text-length budgets.
+
+## [3.0.0] — 2026-11-19
+
+> 定位：把「禁止英文起手短语」换成可判定判据，并为长任务与子智能体补上上下文中段与逐 step 变体。**注意：t24 的批量实测结论是「无显著变化」且未达到 5% 目标，见下方 Verified 段。**
+
+### Added / 新增
+
+- **可判定首句判据**：第一句必须包含中文字符（U+4E00–U+9FFF），且不得以 ASCII 字母开头。原黑名单降级为 `ENGLISH_OPENER_HINTS` 辅助提示（枚举永远不完备），文档写明不得作为唯一判据。
+- **2 条中文 few-shot**：总长 41 字符（≤60），无英文示例，避免把「英文示例」当成可模仿的起手。
+- **step 级上下文变体**：`REQUEST_VARIANTS` 3 版（基础 / 包括这一句 / 工具结果之后），按 assembly 轮换，令整包 sections 每步不同，从而绕过宿主的整包去重、对抗长任务稀释；`contextVariant: false` 回退固定文本（等同 v2）。
+- **双指标与长任务分组**：`tools/lib/lang-metrics.mjs` 的 `segmentMetrics()` 同时输出首句语言与整段 CJK（`firstSentenceIsZh` / `bodyIsZhDominant` 独立字段）；`lang-audit --json` 新增 `summary.firstSentenceVsBody` 与 `summary.longTasks`（按 >10000 字符或 >10 段分 long/short）。
+
+- **Decidable first-sentence rule**: the first sentence must contain a CJK character (U+4E00–U+9FFF) and must not start with an ASCII letter. The old phrase blacklist is demoted to `ENGLISH_OPENER_HINTS` (a hint, never a complete enumeration).
+- **Two Chinese few-shot examples** (41 characters total, ≤60), no English example.
+- **Per-assembly context variants**: three `REQUEST_VARIANTS` rotate per assembly so the whole section bundle differs each step, defeating whole-bundle deduplication on long tasks; `contextVariant: false` falls back to fixed text (= v2).
+- **Dual metrics and long-task grouping**: `segmentMetrics()` reports first-sentence language and body CJK separately; `lang-audit --json` adds `summary.firstSentenceVsBody` and `summary.longTasks`.
+
+### Verified / 实测（t24，真实数据，不美化）
+
+- **批量 probe**：隔离 headless profile，75 条独立 probe（short 45 / mid 15 / long 15），配置 `preset=full`、`contextVariant=lazy`。
+- **首句英文 8/75 = 10.7%**，Wilson 95% **[5.5%, 19.7%]**；v2 参考（n=16）25.0% `[10.2%, 49.5%]`。Δ −14.3pp，但**区间重叠 → 按既定口径判定为「无显著变化」**；下界 5.5% 仍高于 5%，**未达到 5% 目标**。
+- **分组**：short `1/45 = 2.2%` `[0.4%, 11.6%]`（CJK 0.838）；mid `5/15 = 33.3%` `[15.2%, 58.3%]`（CJK 0.420）；long `2/15 = 13.3%` `[3.7%, 37.9%]`（CJK 0.360，工具调用均值 23.9）。
+- **历史语料无回归**：261 会话重算中文主导 76.2%（−0.3pp），英文主导 62（不变）；static 层 42 PASS / 0 FAIL。
+- **两个机制缺口（未修）**：① mid 组 33.3% 是新的失守高发区——只读 1 个文件、2–3 段的形态里工具结果紧贴采样点，而「工具结果之后」变体通常要到第 3 次 assembly 才轮到；② `lazy` 的成本节省未兑现——`out/request-appends.json` 实测 long 组 append/step = 0.783（13.1 步平均 10.3 次 append），推断宿主每次 assembly 多次调用 provider，按调用计数的 lazy 被放大。
+- 成本：short 16.7s / 280 token、mid 37.3s / 1,342、long 265.9s / 14,429；75 条约 1.8 小时 / 249k token。
+
+- **Batch probes**: isolated headless profile, 75 independent probes (short 45 / mid 15 / long 15) with `preset=full`, `contextVariant=lazy`.
+- **First-sentence English 8/75 = 10.7%**, Wilson 95% **[5.5%, 19.7%]**; v2 reference (n=16) 25.0% `[10.2%, 49.5%]`. Δ −14.3pp but **overlapping intervals → judged "no significant change"**; the lower bound (5.5%) is still above 5%, so **the target was not met**.
+- **Groups**: short `1/45 = 2.2%`, mid `5/15 = 33.3%`, long `2/15 = 13.3%`.
+- **No historical-corpus regression**: 261 sessions recomputed, Chinese-dominated 76.2% (−0.3pp), English-dominated 62 (unchanged); static layer 42 PASS / 0 FAIL.
+- **Two known gaps (unfixed)**: (1) the mid group is now the weak spot (33.3%) because tool results sit right next to the sampling point; (2) the `lazy` cost saving did not materialize (append/step = 0.783 on the long group).
+- Cost: 16.7s / 280 tokens (short), 37.3s / 1,342 (mid), 265.9s / 14,429 (long); about 1.8 hours and 249k tokens for 75 probes.
+
+### Compatibility / 兼容性
+
+- v1 / v2 的配置键继续有效（`text`、`order`、`sectionName`、`tailText`、`tailOrder`、`tailSectionName`、`tailEnabled`）；新键 `preset`、`contextVariant` 均有默认值。
+- 五通道 order 未变；`index.js` 零 import。
+
+- v1 / v2 configuration keys keep working; new `preset` and `contextVariant` keys default to `full` / `lazy`.
+- The five channel orders are unchanged; `index.js` has no imports.
+
 ## [2.0.1] — 2026-11-19
 
 > 定位：**文档与检测工具修正；注入行为与 2.0.0 完全相同**（`index.js` 未改，sha256 `49e8918552a9b8e82270084e5d713eb930f826650a39a8907045052a4f0c1e06`）。

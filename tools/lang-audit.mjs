@@ -27,10 +27,18 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import {
+  CJK_THRESHOLD,
+  cjkCount as cjk,
+  latinCount as latin,
+  firstSentence,
+  firstSentenceLanguage,
+  isLongTask,
+  LONG_TASK,
+  summarizeLongTasks,
+} from './lib/lang-metrics.mjs';
 
 const MAGIC = Buffer.from([0x28, 0xb5, 0x2f, 0xfd]);
-const CJK_THRESHOLD = 0.2;
-const ENGLISH_IMPERATIVE = /^(let me|let's|let us|i'll|i will|we need|we'll|the user|i need|i should|first,|ok,|okay,)/i;
 
 const argv = process.argv.slice(2);
 const flag = (name) => argv.includes(name);
@@ -45,33 +53,6 @@ const WITH_SEGMENTS = !flag('--no-segments');
 const ROOT = option('--root', process.env.DSH_SESSIONS_ROOT || path.join(os.homedir(), '.dsh', 'sessions'));
 const TARGET = positional[0];
 const LIMIT = flag('--all') ? Number.POSITIVE_INFINITY : (Number(option('--limit', TARGET ? '1' : '40')) || 40);
-
-const cjk = (text) => (text.match(/[\u4e00-\u9fff]/g) || []).length;
-const latin = (text) => (text.match(/[A-Za-z]/g) || []).length;
-
-/** 去掉行首 Markdown 定界符与空白，与 harness 判据保持同一口径。 */
-function stripDecorations(text) {
-  return text.replace(/^[\s*_`>#\-]+/, '');
-}
-
-/** 取首个句末标点前内容；没有标点则取前 60 字符。 */
-function firstSentence(text) {
-  const cleaned = stripDecorations(text);
-  const match = cleaned.match(/^[\s\S]*?[。！？!?](?=\s|$)|\A[\s\S]*?\.(?=\s|$)/);
-  const sentence = (match ? match[0] : cleaned.slice(0, 60)).trim();
-  return sentence || cleaned.slice(0, 60).trim();
-}
-
-/** 首句语言：中文 / 英文 / 混合（无足够字母与汉字）。 */
-function firstSentenceLanguage(text) {
-  const sentence = firstSentence(text);
-  const zh = cjk(sentence);
-  const en = latin(sentence);
-  if (ENGLISH_IMPERATIVE.test(stripDecorations(sentence))) return 'en';
-  if (zh >= 1 && zh > en * 0.5) return 'zh';
-  if (en >= 3) return 'en';
-  return 'other';
-}
 
 function decompress(file) {
   try {
@@ -327,6 +308,14 @@ const summary = {
   firstSentenceEnRate: Number((firstEn / (total || 1)).toFixed(4)),
   firstEnSegmentMedian: median,
   byAnchorLayer: byLayer,
+  // v3：首句语言与整段 CJK 是两个独立指标，这里给出交叉分布与长任务分组。
+  firstSentenceVsBody: {
+    note: '首句中文但整段英文主导 —— 说明「首句中文 ≠ 整段中文」，长任务会被稀释',
+    firstZhBodyEn: rows.filter((row) => row.firstLanguage === 'zh' && row.dominant === 'en').length,
+    firstEnBodyZh: rows.filter((row) => row.firstLanguage === 'en' && row.dominant === 'zh').length,
+  },
+  longTasks: summarizeLongTasks(rows),
+  longTaskThreshold: LONG_TASK,
 };
 
 if (JSON_OUT) {
@@ -362,4 +351,9 @@ if (JSON_OUT) {
     console.log(`  ${bucket.layer.padEnd(20)} 会话 ${String(bucket.sessions).padStart(4)}  英文主导 ${(bucket.enDominantRate * 100).toFixed(1)}%  首句英文 ${(bucket.firstSentenceEnRate * 100).toFixed(1)}%`);
   }
   console.log(`\n汇总：会话 ${summary.sessions} / 中文主导 ${summary.zhDominant} / 英文主导 ${summary.enDominant}（${(summary.enDominantRate * 100).toFixed(1)}%）/ 首句英文 ${summary.firstSentenceEn}（${(summary.firstSentenceEnRate * 100).toFixed(1)}%）/ 首个英文段序号中位数 ${summary.firstEnSegmentMedian ?? '-'}`);
+  const long = summary.longTasks.long;
+  const short = summary.longTasks.short;
+  console.log(`首句 vs 整段（两个独立指标）：首句中文但整段英文主导 ${summary.firstSentenceVsBody.firstZhBodyEn} 个；首句英文但整段中文主导 ${summary.firstSentenceVsBody.firstEnBodyZh} 个`);
+  console.log(`长任务分组（>${LONG_TASK.chars} 字符或 >${LONG_TASK.segments} 段）：${long.sessions} 个 → 首句英文 ${(long.firstSentenceEnRate * 100).toFixed(1)}% / 整段英文主导 ${(long.bodyEnDominantRate * 100).toFixed(1)}% / CJK 中位数 ${long.cjkRatioMedian ?? '-'}`);
+  console.log(`短任务分组：${short.sessions} 个 → 首句英文 ${(short.firstSentenceEnRate * 100).toFixed(1)}% / 整段英文主导 ${(short.bodyEnDominantRate * 100).toFixed(1)}% / CJK 中位数 ${short.cjkRatioMedian ?? '-'}`);
 }

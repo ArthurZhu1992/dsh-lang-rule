@@ -1,5 +1,5 @@
 /**
- * dsh-lang-rule v2 — 部署级语言策略插件。
+ * dsh-lang-rule v3 — 部署级语言策略插件。
  *
  * 目标（由全量语料审计 LANG-AUDIT 定位）：
  *   1. 首句是唯一强预测因子：首句英文 → 整段英文 81.1%，首句中文 → 1.1%；
@@ -7,13 +7,20 @@
  *   3. 真正漏点在「请求内部」：system 之后还压着 15.6–16.7 KB user 文本，尾锚在 system 里
  *      只能保证「system 段内最后」，保证不了「请求最后」。
  *
- * 因此 v2 用五处注入，前四处是 system prompt section，第五处是每请求重新组装的 runtime context：
+ * 五处注入（order 与 v2.0.0/2.0.1 完全一致，v3 不新增通道）：
  *
  *   [section] order -900   头部铁律锚      长版定性，紧跟 harness 身份段
  *   [section] order -880   子智能体强化锚  显式点名 subagent / AgentTeams / workflow / 后台任务
  *   [section] order 5100   工具文档后重申  在工具 schema 之后、结构化输出之前补一次短约束
  *   [section] order 90050  尾部首句锚      排在全部宿主 section 之后（宿主上界 10200）
  *   [context] order 500    请求尾上下文    宿主每次请求重新渲染，快照 append 在 claimed 消息之后
+ *
+ * v3 相对 v2 的三处改造（只改文本与 context provider，不改注入机制）：
+ *   ① 判据换轨：从「禁止若干英文短语」改为**可判定**——第一句必须包含中文字符、不得以 ASCII 字母开头；
+ *      黑名单降级为辅助提示，并在文档写明「枚举永远不完备」（实测 `The user wants` / `The task:` 漏网）。
+ *   ② few-shot：给 2 个极短中文首句正确示范，让模型有可模仿的形状。
+ *   ③ step 级变体：context 文本不再固定，按 step 在 3 个变体间轮换。原因：宿主对 runtime-context
+ *      的判重单位是整包 sections，固定文本只会 append 一次，长任务（工具调用多）约束被稀释。
  *
  * 顺序依据（非推测，读自 dsh 0.2.2-rc.3 的 @deepseek-ai/dsh-system-prompt src/index.ts）：
  *   SECTION_ORDERS 上界 = DEPLOYMENT_PERSONA_SUFFIX 10200，宿主 section 全部 ≤ 10200；
@@ -25,10 +32,11 @@
  *   - 不 import 任何 cordis / dsh 内部模块，只使用 ctx 暴露的服务；
  *   - systemPrompt 服务缺失、section()/context() 抛错、logger 缺失，一律静默降级，绝不阻断 dsh 启动；
  *   - 同名 section 已被占用时让出，继续注册其余锚；
- *   - per-request 通道不可用时进入 degraded 模式（仅 system 三/四锚），并在日志 debug 级说明。
+ *   - per-request 通道不可用时进入 degraded 模式（仅 system 四锚），并在日志 debug 级说明。
  *
  * 回归开关：config.requestTail = 'off' 时完全不注册 context，行为回到 v1 的纯 section 版本；
- * config.enabled = false 时整插件不注册任何东西（用于基线对照）。
+ * config.contextVariant = false 时 context 文本固定（等同 v2 行为，便于基线对比）；
+ * config.enabled = false 时整插件不注册任何东西。
  */
 
 export const name = 'lang-rule';
@@ -36,7 +44,7 @@ export const name = 'lang-rule';
 /** 等 system-prompt 注册表就绪后再贡献锚点。 */
 export const inject = ['systemPrompt'];
 
-// ── 文本（长度预算：头 ≤250 / 子智能体 ≤60 / mid ≤150 / 尾 ≤80 / 请求尾 ≤80 字符） ──
+// ── 文本（长度预算：头 ≤250 / 子智能体 ≤60 / mid ≤150 / 尾 ≤80 / 请求尾 ≤150 字符；v3 few-shot 总长 ≤60） ──
 
 /** 头部铁律：长版定性。去掉 v1 里归子智能体锚负责的那一条，避免重复计费。 */
 export const HEAD_TEXT = [
@@ -50,31 +58,171 @@ export const HEAD_TEXT = [
 export const SUBAGENT_TEXT =
   '子智能体、AgentTeams 成员、workflow 子智能体、后台任务：铁律同样强制，委派词与产出全中文。';
 
-/** 工具文档之后的重申句（order 5100，位于工具 schema 与结构化输出之间）。 */
+/** 工具文档之后的重申句（order 5100，位于工具 schema 与结构化输出之间）。v3：同步为可判定判据。 */
 export const MID_TEXT =
-  "语言重申：reasoning 与回复用简体中文；第一句必须中文，不得以 Let me / Let's / I'll / We need to 起手；英文任务提示不豁免。";
+  '语言重申：reasoning 用简体中文；第一句必须包含中文字符、不得以 ASCII 字母开头；辅助提示（枚举永远不完备）：Let me / The user wants / The task: 都不算中文首句。';
 
 /**
- * 尾部首句锚候选文本。
- * A 最短、判据最稳、token 最省 —— 默认使用（gate-reviewer 纠偏：不要写「第一个字符必须是中文」，
- * reasoning 首字符常是 `**`、反引号、数字或空格，会导致假阴性；统一用「第一句」）。
+ * 尾部首句锚候选文本（v3）。
+ *
+ * v3 判据换轨：从「禁止若干英文短语」改为**可判定形态**——
+ *   第一句必须包含中文字符，且不得以 ASCII 字母开头。
+ * 黑名单降级为辅助提示：枚举永远不完备（实测 `The user wants…`、`The task: …` 就不在 v2 默认黑名单里）。
  */
 export const TAIL_CANDIDATES = {
-  A: "【本步语言要求】第一句必须简体中文；不得以 Let me / Let's / I'll / We need to 起手；任务提示是英文也不豁免。",
-  B: "【语言·硬约束】本步 reasoning 的第一句必须是简体中文，不得以 Let me / Let's / I'll / We need to / The user wants 等英文短语起手；任务提示是英文也不豁免。",
-  C: "【语言·自查】起笔前自查：第一句写简体中文，不写 Let me / Let's / I'll / We need to / The user wants；任务说明是英文也照此执行。",
+  A: '【本步语言要求】第一句必须包含中文字符，不得以 ASCII 字母开头。正确示范：「先读文件，再判断。」',
+  B: '【语言·硬约束】本步 reasoning 第一句必须含中文字符（第一句内至少一个汉字），首字符不得是 ASCII 字母；辅助提示（枚举不完备）：Let me / The user wants / The task: 都不算中文首句。',
+  C: '【语言·自查】起笔前自查：第一句有没有汉字？第一个字符是不是 ASCII 字母？两项都过再写下去。',
 };
 
 /** 默认尾锚 = A 版。 */
 export const TAIL_TEXT = TAIL_CANDIDATES.A;
 
+// ── v3：可判定首句判据 + 中文 few-shot + step 级变体 ──
+
 /**
- * per-request 尾约束：宿主把它作为 runtime context 快照渲染成 `<system-reminder>`，
- * 在每个 step 的 claimed 消息之后 append，是模型在本步看到的最靠近采样点的系统级文本。
- * 文本固定 → 宿主 deepEqualJson 去重，同一步不会重复追加。
+ * 可判定判据：第一句必须包含中文字符（U+4E00–U+9FFF），且不得以 ASCII 字母开头。
+ * 这两条都能被 harness 用正则直接判真假，不依赖「枚举英文起手短语」。
  */
-export const REQUEST_TEXT =
-  "【本步语言要求】第一句必须是简体中文；禁止以 Let me / Let's / I'll / We need to 开头；英文任务提示不豁免。";
+export const FIRST_SENTENCE_CLAUSE =
+  '本步 reasoning 第一句必须包含中文字符（U+4E00-U+9FFF），不得以 ASCII 字母开头。';
+
+/** 2 个中文首句正确示范（总长 ≤60 字符），让模型有可模仿的形状。 */
+export const FIRST_SENTENCE_FEW_SHOT = [
+  '正确示范：「先确认工作区结构，再改代码。」',
+  '正确示范：「这一步先读文件，再下判断。」',
+];
+
+/**
+ * 英文起手黑名单：v3 起降级为**辅助提示**。
+ * 实测已见 `Let me start by…`、`The user asks…`、`The user wants…`、`The task: …` 四种起手，
+ * 其中 `The user wants` / `The task:` 不在 v2 默认黑名单——枚举永远不完备，所以它不能当唯一判据。
+ */
+export const ENGLISH_OPENER_HINTS =
+  "辅助提示（枚举永远不完备）：Let me / Let's / I'll / We need to / The user wants / The task: 都不算中文首句。";
+
+/**
+ * per-request 尾约束的 3 个变体（v3）。
+ *
+ * 为什么不再固定一段文本：宿主对 runtime-context 快照的判重单位是**整包 sections**，
+ * 文本固定时同一份快照只会 append 一次，长任务里约束会被稀释（工具调用越多越稀释）。
+ * 按 step 轮换文本 → 整包每次不同 → 每步都会重新 append，约束持续贴着采样点。
+ * 代价：每个 step 多一条短快照（约 80–120 字符）。`config.contextVariant = false` 可回到固定文本。
+ */
+export const REQUEST_VARIANTS = [
+  "【本步语言要求】第一句必须包含中文字符，不得以 ASCII 字母开头。正确示范：「先确认工作区结构，再改代码。」「这一步先读文件，再下判断。」辅助提示（枚举永远不完备）：Let me / Let's / The user wants / The task: 都不算中文首句。",
+  '【本步语言要求·包括这一句】就这一句：第一句必须含中文字符，首字符不得是 ASCII 字母。正确示范：「先读文件，再判断。」「先确认边界，再动手。」',
+  '【本步语言要求·工具结果之后】读完工具结果，第一句仍然必须含中文字符、不得以 ASCII 字母开头。正确示范：「结果已拿到，接下来改代码。」',
+];
+
+/** 默认（contextVariant=off 时）使用的固定文本 = 基础变体。 */
+export const REQUEST_TEXT = REQUEST_VARIANTS[0];
+
+// ── v3.1：token 预算（三档 preset + 变体降频 + 成本估算） ──
+
+/**
+ * 紧凑版文本（standard 档用）：保留可判定判据与关键边界，去掉示例与枚举提示。
+ * 预算口径见 estimateTokens()：中文按 1 token/字、非中文按 4 字符≈1 token 保守估算。
+ */
+export const HEAD_TEXT_COMPACT =
+  '**语言铁律（部署级）** 推理与可见输出一律简体中文；仅代码、命令、路径、报错保持原文；除非用户要求其他语言。';
+
+export const MID_TEXT_COMPACT = '语言重申：第一句必须包含中文字符，不得以 ASCII 字母开头。';
+
+/** standard 档的 3 个紧凑变体（必须仍含可判定判据）。 */
+export const REQUEST_VARIANTS_COMPACT = [
+  '【本步】第一句必须含中文字符，不得以 ASCII 字母开头。正确示范：「先读文件，再判断。」',
+  '【本步·含这一句】这一句也要中文：首字符不得是 ASCII 字母。正确示范：「先读文件，再判断。」',
+  '【本步·工具之后】读完工具结果，第一句仍然必须含中文字符。正确示范：「结果已拿到，接下来改代码。」',
+];
+
+/** standard 档固定文本（contextVariant=off 时）。 */
+export const REQUEST_TEXT_COMPACT = REQUEST_VARIANTS_COMPACT[0];
+
+/**
+ * token 估算（保守上界，供 README 与 selftest 用同一口径）：
+ * 中文 1 token/字；非中文字符按 4 字符≈1 token；向上取整。
+ */
+export function estimateTokens(text) {
+  const value = String(text ?? '');
+  const cjk = (value.match(/[\u4e00-\u9fff]/g) || []).length;
+  return Math.ceil(cjk + (value.length - cjk) / 4);
+}
+
+/**
+ * 三档 preset：决定注册哪些通道、用哪套文本、以及每次请求的 token 预算。
+ * 与 contextVariant 正交：preset 管「发什么」，contextVariant 管「多久变一次」。
+ */
+export const PRESETS = {
+  minimal: {
+    channels: ['tail', 'context'],
+    texts: {
+      tail: TAIL_TEXT,
+      request: REQUEST_TEXT,
+      requestVariants: REQUEST_VARIANTS,
+    },
+    tokenBudget: 130,
+  },
+  standard: {
+    channels: ['head', 'subagent', 'mid', 'tail', 'context'],
+    texts: {
+      head: HEAD_TEXT_COMPACT,
+      subagent: SUBAGENT_TEXT,
+      mid: MID_TEXT_COMPACT,
+      tail: TAIL_TEXT,
+      request: REQUEST_TEXT_COMPACT,
+      requestVariants: REQUEST_VARIANTS_COMPACT,
+    },
+    tokenBudget: 300,
+  },
+  full: {
+    channels: ['head', 'subagent', 'mid', 'tail', 'context'],
+    texts: {
+      head: HEAD_TEXT,
+      subagent: SUBAGENT_TEXT,
+      mid: MID_TEXT,
+      tail: TAIL_TEXT,
+      request: REQUEST_TEXT,
+      requestVariants: REQUEST_VARIANTS,
+    },
+    tokenBudget: 400,
+  },
+};
+
+/** 默认档：full（与 v3.0.0 行为一致；省 token 请显式选 minimal/standard）。 */
+export const DEFAULT_PRESET = 'full';
+
+/**
+ * contextVariant 三态归一化：
+ *   'off' / false  → 固定文本（宿主整包去重 → 只 append 一次，最省）
+ *   'step' / true  → 每次 assembly 切换（约束最强，长任务成本最高）
+ *   'lazy'         → 每 3 次 assembly 或首次工具结果后切换（**v3.1 默认**，约为 step 的 1/3 成本）
+ * @returns {'off'|'step'|'lazy'}
+ */
+export function normalizeContextVariant(value) {
+  if (value === false || value === 'off') return 'off';
+  if (value === true || value === 'step') return 'step';
+  return 'lazy';
+}
+
+/**
+ * 变体 provider：按 mode 决定切换频率。
+ * 计数以「assembly 调用次数」为准（宿主通常每 step 一次）。
+ * lazy 的切换点：第 1、4、7、10… 次调用（即每 3 次切换一次）。
+ * @param {'off'|'step'|'lazy'} [mode]
+ * @param {readonly string[]} [variants]
+ * @returns {() => string}
+ */
+export function createRequestVariantProvider(mode = 'lazy', variants = REQUEST_VARIANTS) {
+  let cursor = 0;
+  let calls = 0;
+  return function nextRequestVariant() {
+    calls += 1;
+    if (mode === 'step' && calls > 1) cursor += 1;
+    if (mode === 'lazy' && calls > 1 && (calls - 1) % 3 === 0) cursor += 1;
+    return variants[cursor % variants.length];
+  };
+}
 
 // ── 默认 order（可被 config 覆盖） ──
 
@@ -177,26 +325,32 @@ export function apply(ctx, config = {}) {
     }
   };
 
+  // ── preset：决定注册哪些通道与用哪套文本（与 contextVariant 正交） ──
+  const presetName = Object.hasOwn(PRESETS, settings.preset) ? settings.preset : DEFAULT_PRESET;
+  const preset = PRESETS[presetName];
+  const channels = new Set(preset.channels);
+  const presetText = (key) => preset.texts[key];
+
   const sectionName = pickText(settings.sectionName, 'lang-rule');
   const headOrder = finiteOr(settings.headOrder, finiteOr(settings.order, DEFAULT_HEAD_ORDER));
-  const headText = pickText(settings.headText, pickText(settings.text, HEAD_TEXT));
-  if (settings.headEnabled !== false) addSection(sectionName, headOrder, headText);
+  const headText = pickText(settings.headText, pickText(settings.text, presetText('head') ?? HEAD_TEXT));
+  if (channels.has('head') && settings.headEnabled !== false) addSection(sectionName, headOrder, headText);
 
-  if (settings.subagentEnabled !== false) {
+  if (channels.has('subagent') && settings.subagentEnabled !== false) {
     const subagentOrder = finiteOr(settings.subagentOrder, DEFAULT_SUBAGENT_ORDER);
     const subagentName = pickText(settings.subagentSectionName, 'lang-rule:subagent');
-    const subagentText = pickText(settings.subagentText, SUBAGENT_TEXT);
+    const subagentText = pickText(settings.subagentText, presetText('subagent') ?? SUBAGENT_TEXT);
     addSection(subagentName, subagentOrder, subagentText);
   }
 
-  if (settings.midEnabled !== false) {
+  if (channels.has('mid') && settings.midEnabled !== false) {
     const midOrder = finiteOr(settings.midOrder, DEFAULT_MID_ORDER);
     const midName = pickText(settings.midSectionName, 'lang-rule:mid');
-    const midText = pickText(settings.midText, MID_TEXT);
+    const midText = pickText(settings.midText, presetText('mid') ?? MID_TEXT);
     addSection(midName, midOrder, midText);
   }
 
-  if (settings.tailEnabled !== false) {
+  if (channels.has('tail') && settings.tailEnabled !== false) {
     const hostSectionMax = probeHostOrder(
       registry,
       'getSectionOrder',
@@ -206,23 +360,32 @@ export function apply(ctx, config = {}) {
     // 宿主上界 + 1000 与 v1 既有值取大：既保证「排在宿主全部 section 之后」，又保持向后兼容。
     const tailOrder = finiteOr(settings.tailOrder, Math.max(DEFAULT_TAIL_ORDER, hostSectionMax + 1000));
     const tailName = pickText(settings.tailSectionName, 'lang-rule:tail');
-    const tailText = pickText(settings.tailText, TAIL_TEXT);
+    const tailText = pickText(settings.tailText, presetText('tail') ?? TAIL_TEXT);
     addSection(tailName, tailOrder, tailText);
   }
 
   // ── per-request 尾约束：每请求重新渲染的 runtime context ──
   // config.requestTail = 'off' → 完全回到 v1 的纯 section 行为（回归对比用）。
   const requestMode = settings.requestTail === undefined ? 'context' : settings.requestTail;
-  if (requestMode !== 'off' && requestMode !== false && settings.requestEnabled !== false) {
+  const variantMode = normalizeContextVariant(settings.contextVariant);
+  if (channels.has('context') && requestMode !== 'off' && requestMode !== false && settings.requestEnabled !== false) {
     const hostContextMax = probeHostOrder(registry, 'getContextOrder', 'WEB_SURFACE', HOST_CONTEXT_MAX_FALLBACK);
     const requestOrder = finiteOr(settings.requestOrder, Math.max(DEFAULT_REQUEST_ORDER, hostContextMax + 100));
     const requestName = pickText(settings.requestSectionName, 'lang-rule:request-tail');
-    const requestText = pickText(settings.requestText, REQUEST_TEXT);
+    const customRequestText = typeof settings.requestText === 'string' && settings.requestText.trim() !== '';
+    const baseRequestText = presetText('request') ?? REQUEST_TEXT;
+    const variants = presetText('requestVariants') ?? REQUEST_VARIANTS;
+    // off → 固定文本（宿主整包去重 → 只 append 一次）；lazy（默认）/step → 函数型 provider。
+    const requestText = customRequestText
+      ? settings.requestText
+      : variantMode === 'off'
+        ? baseRequestText
+        : createRequestVariantProvider(variantMode, variants);
     if (typeof registry.context !== 'function') {
       // 旧宿主无 context() 通道：degraded 到「仅 system 锚」，不抛错、不阻断启动。
       skipped.push({ kind: 'context', name: requestName, reason: 'context-api-unavailable' });
       debug('[lang-rule] 宿主无 systemPrompt.context()，per-request 通道降级', { name: requestName });
-    } else if (requestText.trim() === '') {
+    } else if (typeof requestText === 'string' && requestText.trim() === '') {
       skipped.push({ kind: 'context', name: requestName, reason: 'empty-text' });
     } else {
       try {
@@ -234,7 +397,12 @@ export function apply(ctx, config = {}) {
           interpolate: false,
           required: true,
         });
-        registered.push({ kind: 'context', name: requestName, order: requestOrder });
+        registered.push({
+          kind: 'context',
+          name: requestName,
+          order: requestOrder,
+          variant: typeof requestText === 'function' ? variantMode : 'off',
+        });
       } catch (error) {
         skipped.push({ kind: 'context', name: requestName, reason: 'register-failed', error: String(error?.message ?? error) });
         debug('[lang-rule] context 注册跳过', { name: requestName, order: requestOrder });
@@ -245,9 +413,11 @@ export function apply(ctx, config = {}) {
   // 可观测：注册成功打印各 section 的 name 与 order；失败只在 debug 级说明。
   try {
     if (registered.length > 0) {
-      ctx?.logger?.info?.('[lang-rule] v2 已注册语言约束', {
+      ctx?.logger?.info?.('[lang-rule] v3 已注册语言约束', {
+        preset: presetName,
         channels: registered.map((entry) => `${entry.kind}:${entry.name}@${entry.order}`),
         requestTail: requestMode,
+        contextVariant: variantMode,
         degraded: !registered.some((entry) => entry.kind === 'context') && requestMode !== 'off',
       });
     }

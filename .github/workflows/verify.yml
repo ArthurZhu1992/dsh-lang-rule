@@ -1,0 +1,64 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.15', '24']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Syntax check (node --check)
+        run: |
+          set -euo pipefail
+          for f in \
+            index.js \
+            tools/selftest.mjs \
+            tools/selftest.test.mjs \
+            tools/lang-audit.mjs \
+            tools/verify-installed.mjs \
+            tools/lib/lang-metrics.mjs \
+            tools/lib/request-tail-detect.mjs
+          do
+            echo "node --check $f"
+            node --check "$f"
+          done
+
+      - name: Registry contract selftest
+        run: node tools/selftest.mjs
+
+      - name: Unit tests (node:test)
+        run: node --test tools/selftest.test.mjs
+
+      - name: verify-installed (plugin copy)
+        run: node tools/verify-installed.mjs --plugin=. --json
+
+      - name: Package manifest sanity
+        run: |
+          set -euo pipefail
+          node -e "
+            const p = require('./package.json');
+            const need = ['index.js','tools','locale','docs','README.md','RELEASE-NOTES.md','CHANGELOG.md','LICENSE','cordis.patch.yml','icon.svg'];
+            const missing = need.filter((f) => !p.files.includes(f));
+            if (missing.length) { console.error('files missing:', missing); process.exit(1); }
+            if (!p.dsh || !p.dsh.bundle || !p.dsh.bundle.patch) { console.error('dsh.bundle.patch missing'); process.exit(1); }
+            console.log('manifest OK', p.name, p.version);
+          "

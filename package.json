@@ -1,7 +1,7 @@
 {
   "name": "dsh-lang-rule",
-  "version": "2.0.1",
-  "description": "Deployment-level language policy: Chinese-only reasoning and output for every dsh agent, with head/subagent/mid/tail anchors and a per-request context channel where the host exposes one.",
+  "version": "3.1.0",
+  "description": "Deployment-level language policy v3.1: judgment-shaped first-sentence rule (Chinese character required, no ASCII first letter), Chinese few-shot, and step-varying per-request context, with three token presets, for every dsh agent including subagents.",
   "type": "module",
   "main": "index.js",
   "exports": {

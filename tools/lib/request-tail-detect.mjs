@@ -12,8 +12,18 @@
  * 注意：这是「看注入是否发生」的检测器，不评价模型行为；行为结论由 lang-audit / evolve-test live 层给。
  */
 
-/** 与 index.js 的 REQUEST_TEXT 保持一致的判据词；命中任意一条即视为尾约束在场。 */
-export const REQUEST_TAIL_MARKERS = ['第一句必须是简体中文', '英文任务提示不豁免', '禁止以 Let me'];
+/**
+ * 判据词：命中任意一条即视为尾约束在场。
+ * v3 主判据在前（可判定形态），v2 旧文本保留以兼容历史会话（v2 vintage 的尾约束写法）。
+ */
+export const REQUEST_TAIL_MARKERS = [
+  '包含中文字符',
+  '含中文字符',
+  '不得以 ASCII 字母开头',
+  '第一句必须是简体中文',
+  '英文任务提示不豁免',
+  '禁止以 Let me',
+];
 
 /** 宿主 runtime context 快照里本插件 section 的注册名。 */
 export const REQUEST_TAIL_SECTION_NAME = 'lang-rule:request-tail';

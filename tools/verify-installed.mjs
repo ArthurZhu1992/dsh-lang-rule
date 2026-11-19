@@ -121,17 +121,6 @@ function recentSessionDirs(root, limit) {
   return dirs.sort((a, b) => b.mtime - a.mtime).slice(0, limit);
 }
 
-function textOf(message) {
-  const content = message?.content;
-  if (content === undefined) return '';
-  if (typeof content === 'string') return content;
-  if (!Array.isArray(content)) return '';
-  return content
-    .map((block) => (block?.type === 'text' ? block.text : ''))
-    .filter(Boolean)
-    .join('\n');
-}
-
 /** --plugin 相对路径：先按 cwd 解析；找不到 package.json 时回退按插件根（脚本上级目录）解析，避免在插件目录内执行时拼成 `<plugin>/<plugin>`。 */
 function resolvePluginDir(value) {
   const fromCwd = path.resolve(value);
@@ -195,11 +184,11 @@ if (fs.existsSync(pluginPackage)) {
     pluginVersion = 'unparsable';
   }
 }
-record('插件版本', pluginVersion.startsWith('2.') ? 'PASS' : 'WARN', pluginVersion);
+record('插件版本', Number.parseInt(pluginVersion.split('.')[0], 10) >= 2 ? 'PASS' : 'WARN', pluginVersion);
 
 if (fs.existsSync(indexFile)) {
   const source = fs.readFileSync(indexFile, 'utf8');
-  record('index.js 含 v2 标记（requestTail / lang-rule:request-tail）',
+  record('index.js 含 v2+ 标记（requestTail / lang-rule:request-tail）',
     source.includes('requestTail') && source.includes('lang-rule:request-tail') ? 'PASS' : 'WARN',
     '旧版 v1 仍可用，但没有 per-request 通道');
 }
@@ -267,7 +256,7 @@ if (dirs.length === 0) {
     `per-request 约束出现在会话里（${requestTailSeen}/${scanned} 个会话；v2 安装后新会话 ${newScanned} 个）`,
     requestStatus,
     requestTailSeen > 0
-      ? `v2 请求尾通道已生效；来源 ${viaSummary}${requestTailDetails[0] ? `；样例 ${requestTailDetails[0].session} via=${requestTailDetails[0].via} channel=${requestTailDetails[0].channel ?? '?'} ${requestTailDetails[0].sectionNameSeen ? '命中 section=lang-rule:request-tail' : `marker=${requestTailDetails[0].marker}`}` : ''}`
+      ? `语言约束请求尾通道已生效；来源 ${viaSummary}${requestTailDetails[0] ? `；样例 ${requestTailDetails[0].session} via=${requestTailDetails[0].via} channel=${requestTailDetails[0].channel ?? '?'} ${requestTailDetails[0].sectionNameSeen ? '命中 section=lang-rule:request-tail' : `marker=${requestTailDetails[0].marker}`}` : ''}`
       : !usingInstalled
         ? '当前检查的是未安装副本（--plugin），不做活体 FAIL 判定；装进 profile 后重跑'
         : newScanned > 0

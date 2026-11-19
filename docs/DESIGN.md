@@ -115,11 +115,17 @@ gate-reviewer 纠偏：reasoning 首字符常是 `**`、反引号、数字、引
 
 ### 6.1 degraded 上限（captain 裁决，不实现 agent 侧注入）
 
-旧宿主无 `context()` 时**不退回 agent 侧下一 step 注入**。理由：插件 `apply` 在全局作用域拿不到 agent 实例、导入宿主内部模块违反抗升级、用 user 消息注入会改变消息序列与内容哈希并可能污染 transcript。degraded 即上限：
+**实测事实（2026-11-19，dsh desktop + v2.0.0）**：per-request 通道在 desktop 上 **生效**。样例 `03d5a353`：宿主把 `lang-rule:request-tail` 渲染进一条 user 角色的 `<system-reminder>` 快照，`event.data.source.kind='runtime-context'`、`source.sections[]` 含 `name='lang-rule:request-tail'`，正文逐字等于 `REQUEST_TEXT`（`requestContextInUserMessage: true`）。事件 `data` 的 key 是 `content/source/role/id`，**没有 `message` 字段**。
+
+此前「desktop 降级」的结论来自 `verify-installed` 的假阴性：旧检测只读 `event.data.message.source.kind`，漏掉了无 `message` 包装的真实形态。现检测器（`tools/lib/request-tail-detect.mjs`）兼容两种形状，并在详情标注 `via=user-system-reminder channel=runtime-context` 与命中的 section 名/判据词。
+
+**degraded 只在两种情况发生**：① 宿主没有 `systemPrompt.context()`；② 部署抑制 runtime context 且连 `required: true` 条目也不保留。两者都必须能被 `verify-installed --strict` 复现（否则视为检测缺陷，不是宿主结论）。
+
+旧宿主无 `context()` 时**不退回 agent 侧下一 step 注入**。理由：插件 `apply` 在全局作用域拿不到 agent 实例、导入宿主内部模块违反抗升级、用 user 消息注入会改变消息序列与内容哈希并可能污染 transcript。
 
 - 判定：`typeof ctx.systemPrompt.context !== 'function'`；
 - 表现：只有 4 个 section，无 per-request 尾注，`logger.debug` 记录 `context-api-unavailable`；
-- 自查：`verify-installed --strict` 的 `per-request 约束出现在 runtime-context` 项 —— 已安装 v2 且产生了新会话却 0 证据时判 FAIL；无新会话时 WARN；检查未安装副本时不判 FAIL。
+- 自查：`verify-installed --strict` 的 `per-request 约束出现在会话里` 项 —— 已安装 v2 且产生了新会话却 0 证据时判 FAIL；无新会话时 WARN；检查未安装副本时不判 FAIL。
 
 ## 7. 验收与复测
 
@@ -136,8 +142,67 @@ node tools/lang-audit.mjs --json
 
 `tools/verify-installed.mjs` 用于确认部署侧真的装上了 v2：头部锚、尾部锚出现在 system，per-request 约束出现在 `runtime-context` 快照。
 
-## 8. 未解决 / 后续
+## 8. v3：判据换轨（可判定首句）
+
+### 8.1 为什么换
+
+| 证据 | 数值 | 结论 |
+| --- | --- | --- |
+| v2 首句英文率（n=16） | 25.0%，Wilson 95% CI [10.2%, 49.5%] | 与 v1 的 28.2% 区间重叠 → 黑名单 + 尾锚没有把首句压下去 |
+| 已见起手 | `Let me start by…`、`The user asks…`、`The user wants…`、`The task: …` | 后两种不在 v2 黑名单 → **枚举永远不完备** |
+| 首句中文 ≠ 整段中文 | 63,443 字符 / 21 段：首句中文但 CJK 0.222；406 字符 / 1 段：CJK 0.910 | 必须把首句指标与整段指标拆开 |
+| 工具调用越多越稀释 | 长任务里静态锚作用下降 | 固定文本因整包去重只 append 一次 → 需要 step 级变化 |
+
+### 8.2 改了什么（不改注入机制）
+
+- **判据**：`第一句必须包含中文字符（U+4E00–U+9FFF），不得以 ASCII 字母开头`。两条都能被正则直接判定；黑名单（`ENGLISH_OPENER_HINTS`）降级为辅助提示，并在 README/DESIGN 标注「枚举永远不完备」。
+- **few-shot**：`FIRST_SENTENCE_FEW_SHOT` 2 条中文正确示范，总长 41 字符（≤60 预算），不含英文示例。
+- **step 级变体**：`REQUEST_VARIANTS` 3 版（基础 / 「包括这一句」/「工具结果之后」），`createRequestVariantProvider()` 每次 assembly 调一次、按 3 轮换。整包 sections 每次不同 → 宿主每步重新 append，约束不被稀释。`config.contextVariant = false` 回退固定文本（等同 v2）。
+- **成本**：每 step 多一条 73–137 字符的快照；长任务累计有 token 成本，可关闭。
+
+### 8.3 指标拆分
+
+`tools/lib/lang-metrics.mjs` 提供纯函数，`lang-audit` 与 `selftest` 共用：
+
+- 单段：`segmentMetrics()` 同时给 `firstLanguage`（首句语言）与 `cjkRatio`（整段 CJK 比），字段 `firstSentenceIsZh` / `bodyIsZhDominant` 分开；
+- 会话：`summary.firstSentenceVsBody` 给「首句中文但整段英文主导」的交叉计数；
+- 分组：`summarizeLongTasks()` 按 `>10000 字符 或 >10 段` 分 `long` / `short`，两组各自算首句英文率、整段英文主导率、CJK 中位数。
+
+首句判定的 v3 修正（两条，都与锚文本判据一一对应）：
+
+1. 中文句号/问号/叹号后**不需要空格**也切分（v2 的实现要求后随空白，导致「中文首句 + 紧跟英文正文」被误判为英文首句）；
+2. `firstSentenceLanguage()` 先判首字符：去装饰后若首字符是 `[A-Za-z]` 直接判 `en`，实现锚文本第二条「不得以 ASCII 字母开头」。因此 `OK 我先确认…`、`Sure 这一步…` 不会再被算成中文首句；`segmentMetrics().firstSentenceIsZh` 复用同一函数，判据与测量不会各说各话。
+
+## 9. 未解决 / 后续
 
 - AgentTeams 英文分派模板是 a 类入口（53/62 英文会话首条 user 即该模板），但修改它不在本插件范围；插件只能在提示词侧抵消。
 - 宿主若改变 runtime context 投影顺序或去重语义，需重新审计。`verify-installed.mjs` 的 D 层与 `lang-audit` 的 `requestTail` 证据可第一时间发现退化。
-- per-request 通道的实测收益需要新会话数据，v2 发布后由 t5 执行分层复测。
+- v3 的实测收益需要 v3 vintage 的新会话数据（t22 的批量验证）；在此之前只能引用 v2 probe 的 n=16 结论。
+
+## 10. v3.1：token 预算设计
+
+### 10.1 成本结构
+
+| 层 | 每次请求是否重发 | cache 行为 | 结论 |
+| --- | --- | --- | --- |
+| system prompt 四 section（head/subagent/mid/tail） | 是，但在可复用前缀里 | 固定文本 → 命中 prompt cache 后边际≈0 | 不是主要成本 |
+| per-request context（request-tail） | 是，append 在请求末尾 | 不在前缀里 → **每次全价**；整包去重可跳过重复 | 真正的成本项 |
+
+### 10.2 两个旋钮
+
+- `preset`：管「发什么」。`minimal`=tail+context；`standard`=五通道+紧凑文本；`full`=五通道+完整文本+few-shot。
+- `contextVariant`：管「多久变一次」。`off`=固定（去重后只 append 一次）；`lazy`=每 3 次 assembly 切换（第 1/4/7/10… 次）；`step`=每次切换。
+
+两者正交：`preset` 决定注册通道与文本，`contextVariant` 只影响 context 的 provider 形态（`off` 为字符串，`lazy`/`step` 为函数）。
+
+### 10.3 为什么默认 `lazy` 而不是 `step`
+
+v3.0.0 的 `step` 变体在长任务里每步重发一条约 137 字符（点估 86 token）的快照：20 step ≈ 1720 token，且随步数线性增长。`lazy` 把切换点放到第 1/4/7/10… 次 assembly（20 step 约 7 次 ≈ 602 token），仍保留「工具结果之后仍然要中文」的变体语义；`off` 则完全回到 v2 的一次 append。
+
+### 10.4 预算口径与断言
+
+`estimateTokens(text)` = 中文字符数 + 非中文字符数/4（向上取整），是保守上界；README 同时给「中文 0.6–1 token/字」的区间。selftest 断言：三档总估算（minimal ≤130 / standard ≤300 / full ≤400）、单常量长度（HEAD ≤160 / SUBAGENT ≤60 / MID ≤110 / TAIL ≤60 / REQUEST ≤140）、`lazy` 在 12 步内只在第 1/4/7/10 次切换、`off` 与 `step` 的 provider 形态。
+
+### 10.5 不允许用省 token 削弱判据
+
+`minimal` 仍必须含「第一句必须包含中文字符 / 不得以 ASCII 字母开头」与 per-request 注入；`standard` 仍必须覆盖五通道。selftest 的「功能不缩水」用例把这两条钉死。

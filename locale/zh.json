@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "dsh-lang-rule",
-    "description": "部署级语言策略 v2：头锚 -900、子智能体锚 -880、工具文档后重申 5100、尾部首句锚 90050、每请求 runtime-context 500，要求推理与回复首句即简体中文，覆盖主 agent、子智能体、AgentTeams 成员与后台任务；宿主或其它插件关闭 runtime context 时自动降级为四个 section。"
+    "description": "部署级语言策略 v3：可判定的首句约束（第一句必须含中文字符、不得以 ASCII 字母开头）+ 中文 few-shot + 每步轮换的 request-tail 变体，覆盖子智能体、团队成员与后台任务。"
   }
 }

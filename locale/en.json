@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "dsh-lang-rule",
-    "description": "Deployment-level language policy v2: head anchor -900, subagent anchor -880, post-tools reminder 5100, tail first-sentence anchor 90050, and per-request runtime-context 500, requiring Simplified Chinese from the first sentence for the main agent, subagents, AgentTeams members and background jobs; degrades to four sections when the host or another plugin suppresses runtime context."
+    "description": "Deployment-level language policy v3: a judgeable first-sentence rule (must contain a Chinese character, must not start with an ASCII letter) plus Chinese few-shot and a step-varying request-tail variant, covering subagents, teammates and background tasks."
   }
 }
