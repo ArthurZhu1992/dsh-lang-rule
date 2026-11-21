@@ -424,3 +424,11 @@ dsh plugin --profile <your-profile> why dsh-zh-yayan
 中文思考 · 中文推理 · 思维链中文 · 简体中文 · 汉语 · 中文输出 · 英文思考修复 · 语言策略 · 子智能体中文 · 多智能体中文 · 团队中文 · 提示词中文约束
 
 reasoning in Chinese · thinking in Chinese · chain-of-thought in Chinese · Simplified Chinese · Mandarin · language policy · output language · system prompt · subagent · multi-agent · agent team · DeepSeek Harness · DSH plugin · Cordis
+
+---
+
+## 反馈
+
+- 问题与建议：[GitHub Discussions](https://github.com/ArthurZhu1992/dsh-zh-yayan/discussions)
+- 若想报告「首句仍跑英文」的具体样本，请附会话片段、任务提示原文与本机 DSH 版本（`dsh --version`），这三样能直接定位到是哪一层锚没命中。
+- 为什么把判据定在「第一句」，以及三次失败的复盘，见 [docs/WHY-FIRST-SENTENCE.md](docs/WHY-FIRST-SENTENCE.md)。
